@@ -98,6 +98,32 @@ function fmtShort(dateKey) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// Generates the list of occurrence dates (as "YYYY-MM-DD" keys) for a recurring
+// meeting, starting at startKey and repeating up to and including untilKey.
+// Capped at 104 occurrences (2 years of weekly) as a sane upper bound so a
+// mistyped far-future end date can't generate thousands of rows.
+function generateOccurrences(startKey, untilKey, freq) {
+  const dates = [];
+  const start = new Date(startKey + "T00:00:00");
+  const end = new Date(untilKey + "T00:00:00");
+  const anchorDay = start.getDate(); // e.g. 31, for "every 31st (or last day if shorter)"
+  let cursor = start;
+  let guard = 0;
+  while (cursor <= end && guard < 104) {
+    dates.push(toKey(cursor));
+    if (freq === "monthly") {
+      const targetMonthIndex = cursor.getMonth() + 1;
+      const daysInTargetMonth = new Date(cursor.getFullYear(), targetMonthIndex + 1, 0).getDate();
+      const day = Math.min(anchorDay, daysInTargetMonth); // clamp, e.g. Jan 31 -> Feb 28
+      cursor = new Date(cursor.getFullYear(), targetMonthIndex, day);
+    } else {
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7);
+    }
+    guard += 1;
+  }
+  return dates;
+}
+
 // Entries are stored as one flat list under a single key, each with its own
 // due date (tasks) or meeting date (meetings) — this is the date the entry
 // shows up on the calendar under. Tasks also carry an optional start date,
@@ -172,6 +198,9 @@ export default function TeamPlanner() {
   const [formDue, setFormDue] = useState("");
   const [formTime, setFormTime] = useState("");
   const [formNotes, setFormNotes] = useState("");
+  const [formRepeat, setFormRepeat] = useState(false);
+  const [formRepeatFreq, setFormRepeatFreq] = useState("weekly"); // "weekly" | "monthly"
+  const [formRepeatUntil, setFormRepeatUntil] = useState("");
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -257,6 +286,9 @@ export default function TeamPlanner() {
     setFormDue(selectedDate);
     setFormTime("");
     setFormNotes("");
+    setFormRepeat(false);
+    setFormRepeatFreq("weekly");
+    setFormRepeatUntil("");
     setFormError("");
     setShowForm(true);
   }
@@ -273,6 +305,9 @@ export default function TeamPlanner() {
     setFormDue(entry.dueDate || "");
     setFormTime(entry.time || "");
     setFormNotes(entry.notes || "");
+    setFormRepeat(false); // editing never regenerates a series — just this one occurrence
+    setFormRepeatFreq("weekly");
+    setFormRepeatUntil("");
     setFormError("");
     setShowForm(true);
   }
@@ -297,6 +332,16 @@ export default function TeamPlanner() {
     if (formType === "task" && isHead && formHead !== currentUser.id) {
       setFormError("You can only enter tasks under your own name.");
       return;
+    }
+    if (formType === "meeting" && formRepeat) {
+      if (!formRepeatUntil) {
+        setFormError("Pick an end date for the repeat.");
+        return;
+      }
+      if (formRepeatUntil < formDue) {
+        setFormError("Repeat end date is before the meeting date.");
+        return;
+      }
     }
     setSaving(true);
 
@@ -327,19 +372,28 @@ export default function TeamPlanner() {
       return;
     }
 
-    const entry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    const baseEntry = {
       type: formType,
       title: formTitle.trim(),
       head: formType === "task" ? formHead : null,
       assignee: formType === "task" ? formAssignee : null,
       status: formType === "task" ? formStatus : null,
       start_date: formType === "task" ? (formStart || formDue) : null,
-      due_date: formDue,
       time: formTime.trim(),
       notes: formNotes.trim(),
     };
-    const { error } = await supabase.from("entries").insert(entry);
+
+    const occurrenceDates = (formType === "meeting" && formRepeat)
+      ? generateOccurrences(formDue, formRepeatUntil, formRepeatFreq)
+      : [formDue];
+
+    const rows = occurrenceDates.map((dueKey, i) => ({
+      ...baseEntry,
+      id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+      due_date: dueKey,
+    }));
+
+    const { error } = await supabase.from("entries").insert(rows);
     if (error) {
       console.error("Insert error:", error);
       setFormError("Couldn't save. Check your connection and try again.");
@@ -349,7 +403,7 @@ export default function TeamPlanner() {
     await fetchEntries();
     setSaving(false);
     setShowForm(false);
-    showToast(`${typeLabel(formType)} added`);
+    showToast(rows.length > 1 ? `${rows.length} meetings added` : `${typeLabel(formType)} added`);
   }
 
   function canEditEntry(entry) {
@@ -939,6 +993,44 @@ export default function TeamPlanner() {
                   onChange={(e) => { setFormDue(e.target.value); if (formError) setFormError(""); }}
                   style={inputStyle}
                 />
+              </div>
+            )}
+
+            {formType === "meeting" && (
+              <div style={{ marginTop: 10 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#202124", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={formRepeat}
+                    onChange={(e) => { setFormRepeat(e.target.checked); if (formError) setFormError(""); }}
+                    style={{ width: 16, height: 16 }}
+                  />
+                  Repeat this meeting
+                </label>
+                {formRepeat && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Repeats</div>
+                      <select
+                        value={formRepeatFreq}
+                        onChange={(e) => setFormRepeatFreq(e.target.value)}
+                        style={inputStyle}
+                      >
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Until</div>
+                      <input
+                        type="date"
+                        value={formRepeatUntil}
+                        onChange={(e) => { setFormRepeatUntil(e.target.value); if (formError) setFormError(""); }}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
