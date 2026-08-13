@@ -119,6 +119,17 @@ export default function TeamPlanner() {
   const [pickerName, setPickerName] = useState("");
   const [showOwnerLogin, setShowOwnerLogin] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [viewMode, setViewMode] = useState("calendar"); // "calendar" | "list"
+  const [activeFilters, setActiveFilters] = useState(() => new Set());
+
+  function toggleFilter(key) {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   function chooseIdentity(id) {
     setCurrentUserId(id);
@@ -379,8 +390,21 @@ export default function TeamPlanner() {
     return headStyleFor(headId);
   }
 
+  // An entry passes if it matches ANY active filter chip (OR logic) — e.g. selecting
+  // "Sabeeh" and "Meetings" shows Sabeeh's tasks plus all meetings, not just their overlap.
+  // With no filters active, everything shows (the normal, unfiltered view).
+  function matchesFilters(e) {
+    if (activeFilters.size === 0) return true;
+    if (activeFilters.has("mine") && currentUser && e.type === "task" && e.assignee === currentUser.name) return true;
+    if (activeFilters.has(e.type) && (e.type === "meeting" || e.type === "event")) return true;
+    if (e.type === "task" && e.head && activeFilters.has(e.head)) return true;
+    return false;
+  }
+
+  const filteredEntries = entries.filter(matchesFilters);
+
   const entriesByDate = {};
-  for (const e of entries) {
+  for (const e of filteredEntries) {
     const key = e.dueDate;
     if (!key) continue;
     if (!entriesByDate[key]) entriesByDate[key] = [];
@@ -603,6 +627,52 @@ export default function TeamPlanner() {
         )}
       </div>
 
+      <div style={{ padding: "0 16px 10px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+          <FilterChip label="My tasks" active={activeFilters.has("mine")} color="#1a73e8" bg="#E8F0FE" onClick={() => toggleFilter("mine")} />
+          {HEADS.map((h) => (
+            <FilterChip key={h.id} label={h.name} active={activeFilters.has(h.id)} color={h.color} bg={h.bg} onClick={() => toggleFilter(h.id)} />
+          ))}
+          <FilterChip label="Meetings" active={activeFilters.has("meeting")} color={MEETING_COLOR} bg={MEETING_BG} onClick={() => toggleFilter("meeting")} />
+          <FilterChip label="Events" active={activeFilters.has("event")} color={EVENT_COLOR} bg={EVENT_BG} onClick={() => toggleFilter("event")} />
+          {activeFilters.size > 0 && (
+            <button
+              onClick={() => setActiveFilters(new Set())}
+              style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 11.5, cursor: "pointer", padding: "4px 6px" }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => setViewMode("calendar")}
+            style={{
+              flex: 1, padding: "7px 0", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              border: viewMode === "calendar" ? "2px solid #1a73e8" : "1px solid #dadce0",
+              background: viewMode === "calendar" ? "#E8F0FE" : "#fff",
+              color: viewMode === "calendar" ? "#1a73e8" : "#5f6368",
+            }}
+          >
+            📅 Calendar
+          </button>
+          <button
+            onClick={() => setViewMode("list")}
+            style={{
+              flex: 1, padding: "7px 0", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              border: viewMode === "list" ? "2px solid #1a73e8" : "1px solid #dadce0",
+              background: viewMode === "list" ? "#E8F0FE" : "#fff",
+              color: viewMode === "list" ? "#1a73e8" : "#5f6368",
+            }}
+          >
+            ☰ List
+          </button>
+        </div>
+      </div>
+
+      {viewMode === "calendar" ? (
+      <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 16px 10px" }}>
         <button onClick={() => changeMonth(-1)} aria-label="Previous month" style={navBtnStyle}>‹</button>
         <div style={{ fontSize: 16, fontWeight: 600, color: "#202124" }}>
@@ -750,6 +820,20 @@ export default function TeamPlanner() {
           </div>
         )}
       </div>
+      </>
+      ) : (
+        <ListView
+          entries={filteredEntries}
+          todayKey={todayKey}
+          currentUser={currentUser}
+          isMember={isMember}
+          headInfo={headInfo}
+          canEditEntry={canEditEntry}
+          openEditForm={openEditForm}
+          deleteEntry={deleteEntry}
+          cycleStatus={cycleStatus}
+        />
+      )}
 
       {showForm && (
         <div style={{ padding: "0 16px 12px" }}>
@@ -917,6 +1001,105 @@ function SummaryStat({ label, value, color }) {
     <div style={{ background: "#f8f9fa", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
       <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
       <div style={{ fontSize: 10, color: "#70757a", marginTop: 1 }}>{label}</div>
+    </div>
+  );
+}
+
+function FilterChip({ label, active, color, bg, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        border: active ? `2px solid ${color}` : "1px solid #dadce0",
+        background: active ? bg : "#fff",
+        color: active ? color : "#5f6368",
+        fontSize: 11.5, fontWeight: 600, padding: active ? "3px 9px" : "4px 10px",
+        borderRadius: 999, cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+// Simple scrollable feed: overdue tasks first (if any), then everything from today
+// onward sorted by date. Respects whatever filters are active on the calendar view.
+function ListView({ entries, todayKey, currentUser, isMember, headInfo, canEditEntry, openEditForm, deleteEntry, cycleStatus }) {
+  const withDate = entries.filter((e) => e.dueDate);
+  const overdue = withDate
+    .filter((e) => e.type === "task" && e.dueDate < todayKey && e.status !== "completed" && e.status !== "cancelled")
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const upcoming = withDate
+    .filter((e) => e.dueDate >= todayKey)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+  function Row(e) {
+    const isTask = e.type === "task";
+    const h = headInfo(e.head);
+    const color = e.type === "meeting" ? MEETING_COLOR : e.type === "event" ? EVENT_COLOR : (h ? h.color : "#5f6368");
+    const bg = e.type === "meeting" ? MEETING_BG : e.type === "event" ? EVENT_BG : (h ? h.bg : "#f1f3f4");
+    const isMyTask = isTask && currentUser && e.assignee === currentUser.name;
+    const canChangeStatus = isTask && (canEditEntry(e) || isMyTask);
+    const canDelete = canEditEntry(e);
+    return (
+      <div key={e.id} style={{ background: bg, borderRadius: 10, padding: "8px 10px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0 }} />
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: "#202124", wordBreak: "break-word" }}>{e.title}</span>
+            <span style={{ fontSize: 10.5, color: "#5f6368" }}>· {fmtShort(e.dueDate)}</span>
+          </div>
+          <div style={{ fontSize: 11.5, color: "#5f6368", paddingLeft: 13 }}>
+            {isTask ? `${e.assignee || "Unassigned"} · entered by ${h ? h.name : "Unknown"}` : typeLabel(e.type)}
+            {e.time ? ` · ${e.time}` : ""}
+          </div>
+          {isTask && (
+            canChangeStatus ? (
+              <button
+                onClick={() => cycleStatus(e.id)}
+                style={{
+                  marginLeft: 13, marginTop: 4, border: "none", cursor: "pointer",
+                  fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
+                  color: statusInfo(e.status).color, background: statusInfo(e.status).bg,
+                }}
+              >
+                {statusInfo(e.status).label} · tap to {isMember ? "toggle" : "change"}
+              </button>
+            ) : (
+              <span style={{
+                display: "inline-block", marginLeft: 13, marginTop: 4,
+                fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
+                color: statusInfo(e.status).color, background: statusInfo(e.status).bg,
+              }}>
+                {statusInfo(e.status).label}
+              </span>
+            )
+          )}
+        </div>
+        {canDelete && (
+          <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+            <button onClick={() => openEditForm(e)} aria-label="Edit" style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 13, cursor: "pointer", padding: 4, lineHeight: 1 }}>✏️</button>
+            <button onClick={() => deleteEntry(e.id)} aria-label="Delete" style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 15, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "4px 16px 12px" }}>
+      {overdue.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#C5221F", margin: "4px 0 8px" }}>Overdue</div>
+          {overdue.map(Row)}
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#202124", margin: "14px 0 8px" }}>Upcoming</div>
+        </>
+      )}
+      {upcoming.length === 0 ? (
+        <div style={{ fontSize: 13, color: "#70757a", padding: "8px 0" }}>Nothing upcoming.</div>
+      ) : (
+        upcoming.map(Row)
+      )}
     </div>
   );
 }
