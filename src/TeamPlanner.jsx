@@ -152,6 +152,7 @@ export default function TeamPlanner() {
   const [formNotes, setFormNotes] = useState("");
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
   const fetchEntries = useCallback(async () => {
     const { data, error } = await supabase
@@ -224,6 +225,7 @@ export default function TeamPlanner() {
   }
 
   function openForm(type) {
+    setEditingId(null);
     setFormType(type);
     setFormHead(currentUser && (currentUser.role === "head" || currentUser.role === "owner") ? currentUser.id : HEADS[0].id);
     setFormAssignee(MEMBERS[0]);
@@ -233,6 +235,22 @@ export default function TeamPlanner() {
     setFormDue(selectedDate);
     setFormTime("");
     setFormNotes("");
+    setFormError("");
+    setShowForm(true);
+  }
+
+  function openEditForm(entry) {
+    if (!canEditEntry(entry)) return;
+    setEditingId(entry.id);
+    setFormType(entry.type);
+    setFormHead(entry.head || (currentUser && (currentUser.role === "head" || currentUser.role === "owner") ? currentUser.id : HEADS[0].id));
+    setFormAssignee(entry.assignee || MEMBERS[0]);
+    setFormTitle(entry.title || "");
+    setFormStatus(entry.status || "not_started");
+    setFormStart(entry.startDate || entry.dueDate || "");
+    setFormDue(entry.dueDate || "");
+    setFormTime(entry.time || "");
+    setFormNotes(entry.notes || "");
     setFormError("");
     setShowForm(true);
   }
@@ -259,6 +277,33 @@ export default function TeamPlanner() {
       return;
     }
     setSaving(true);
+
+    if (editingId) {
+      // Editing an existing entry: update in place, keep its original id/type.
+      const updates = {
+        title: formTitle.trim(),
+        head: formType === "task" ? formHead : null,
+        assignee: formType === "task" ? formAssignee : null,
+        status: formType === "task" ? formStatus : null,
+        start_date: formType === "task" ? (formStart || formDue) : null,
+        due_date: formDue,
+        time: formTime.trim(),
+        notes: formNotes.trim(),
+      };
+      const { error } = await supabase.from("entries").update(updates).eq("id", editingId);
+      if (error) {
+        console.error("Update error:", error);
+        setFormError("Couldn't save. Check your connection and try again.");
+        setSaving(false);
+        return;
+      }
+      await fetchEntries();
+      setSaving(false);
+      setShowForm(false);
+      setEditingId(null);
+      return;
+    }
+
     const entry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type: formType,
@@ -686,11 +731,18 @@ export default function TeamPlanner() {
                     )}
                   </div>
                   {canDelete && (
-                    <button
-                      onClick={() => deleteEntry(e.id)}
-                      aria-label="Delete"
-                      style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 15, cursor: "pointer", padding: 4, lineHeight: 1, flexShrink: 0 }}
-                    >×</button>
+                    <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                      <button
+                        onClick={() => openEditForm(e)}
+                        aria-label="Edit"
+                        style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 13, cursor: "pointer", padding: 4, lineHeight: 1 }}
+                      >✏️</button>
+                      <button
+                        onClick={() => deleteEntry(e.id)}
+                        aria-label="Delete"
+                        style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 15, cursor: "pointer", padding: 4, lineHeight: 1 }}
+                      >×</button>
+                    </div>
                   )}
                 </div>
               );
@@ -703,7 +755,7 @@ export default function TeamPlanner() {
         <div style={{ padding: "0 16px 12px" }}>
           <div style={{ background: "#f8f9fa", borderRadius: 12, padding: 14 }}>
             <div style={{ fontSize: 13.5, fontWeight: 600, color: "#202124", marginBottom: 10 }}>
-              New {typeLabel(formType).toLowerCase()}
+              {editingId ? "Edit" : "New"} {typeLabel(formType).toLowerCase()}
             </div>
 
             {formType === "task" && (
@@ -812,7 +864,7 @@ export default function TeamPlanner() {
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button
-                onClick={() => setShowForm(false)}
+                onClick={() => { setShowForm(false); setEditingId(null); }}
                 style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "1px solid #dadce0", background: "#fff", color: "#5f6368", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}
               >
                 Cancel
