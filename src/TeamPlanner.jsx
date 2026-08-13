@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 
 const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAOj0lEQVR42u1de2wV15n/fWdm7tyHry9gHobY4AZCsgQQhJcDNKFVSNtUTTapwooNu6Fiy2qjhu0/VZRVV4YVu6oqraqkSUW62awWBamxCbQb7aLdJAXnUULSslAgGxxexuDaCY4f9zlz55xv/5iZaxswz/sw7nzS2NaVrn39+33ne59zCCPI448/rjU3Nysi4iEvVwGIACAEcrEoAGkAWf8FZhabN2/Gli1b1Ehv0i/3IjNrRCSJCBs3brxv9erVj9TXT1+WSFTXm6YZBSggYIgQAUopzuVyyd7e3tNnzpx5r6WlZTcRHQKA5uZmbc2aNfKafhczCwDYsGHDqtbW1nd6e/s4kOuX8+fP8549e3bff//9c32lvmbwt/3851s6Ozv93yWZOS+ldBzHUVLK4Bn5kVJKh5nzzKyYmU+cOJHeunXrXwHA3r179SuBrwHA9u3b/8UHXkrpKKUCdb4BUUqxlDLPzJxKpfgnP3numRFXgv/i8y+8sMV7vy2lDJAvgjiOo5g5n0wm+dlnn/1z3ycUwG9ubtaEEHjyySdXfPbZ5+yZmwD8YpIgpWRm2db26cCiRYumMzM1NTWJQqgEgN5++9f7PbvjBJCVRPLMzK+99torQ62OICL1nY0bVyxbtrQRgCIiLQgsS5AkKKUB4MbGxrWLFy+uF0LIpqYmIQDgodUPronFYuwREKBVAhFCEAA5ffr08Lp16x5hZqxatUoIANTQMONeZiYppQigKrnwnDlz7geAVatWsQCQSCQS9Z7mB+pfQvEUnGpqamb5lkmMq61NmKYZc1PqAP/SlixcfE3TrAag6brOImGaFGh+mW0QcwFzvUx/EKwABoNAIBGstitWQ4sXejGIyH20wMWUjQClGEIQ3MgL+KwzidMnLqDrXD+6zvXjnuUzsGRlA1gxSFBAQCnAl47C/n2n8N6bn+J02wWkkhaIgGR/DuGI4RLAwZooKgHsgX/04Hm89vJvcer459B0Qsg0UBU3IXTXHJkRI7A9xSbA1/xf7jiEXdsPggiIJ8JgZijlPpCAlAqsOEC+mAQoyRAaYce2A3jjF4dRPT4Cggt2IFcpURRF8zXCnteP4o1fHMa4CdGC1gdSYgJ8s3PmRA+a//UjVI8LQykFBNiXhwA/gtn17weRzyuQIHAAfnkIUF4Mf/bkFzhy8DyiMQNKBuiXjQD2VP3g/nZY2TyECCrZZSVAeLWcU20XoOmiQEggZSLAtfeM3p4MNE0Etr+seQC7Hlg6jLzljMlBRVehXK0qZeVW/2PTuAKwPCRa5sGQjgheBXdonIeAgJsHljxwPWDpyvBaOQfZjI28LTGpNh4QwMyDfuYGgWVmD9g8MikbqaSFZH8Oyf4cBvqzSPblkBywkE5ZyKRt2DkHyQELf/E3jVi8YkYh8fyjIcAHXQgaYhYun5P4GptO2UgNDAG2L+v+nLSQTlrIpvPI5fKwLQnHkVCSCxEcERX6GEIj6IaA40h0dvQBmFGSDF8fteaE3UTPB73nsxQ+706h74uMB2wOyYEcUgMW0ikb2bQNK+fAthw4joJSqrBifAKFNgiwphF0w0DB1POl5oyIvM9Aw1P/sUxAoUtGhM6OPvzuN2fRdqwbn3clkc3koaQqWCASg4D6P+uGgBHSBgHjQavlf/GJYcVXVGry3hP2+xdjfQX4NjbZn8Mbzb/Hwf1nkcvmYRgadENDOHqpxl4MrPsUCSl2E85JtVVjfwX43bT2kz34t5/+Bhe6U4hWhVBVbboTFcxX1dhii5SMWNxEw6yaQog6ajLhYjtbEoTOs33Y9uN30N+bRbw6DDCGOclyiqYRctk8/mR+rdvj8CY8xhwBPra25eDVbQeQzdgIh/WKdtNIEBxHIRIx8LVH7x4W9o5BAlzNevfNE2g/2YNILARZwbK20AjKUchlHfzZhsWYMq268BnHHAEM1+5bOQfv//okwlEDqgKaTzQYqqaTNoQm8J2nl2PR8hmFvseYzIRZMaABbce6caE7iWgsVPJesp8xkzedyQpw8hK27cAwdCxcVo9vPj4PU6ZVlyTzHV0EeN8/OdJ1U452xDLE0HDVC0+lw5BSQjoKihmGoaFmcgx3zq3FkpUNhYinHOBXnADN6yGfO9MLXdeuuafglyWYAaUUpHSnMNibP7o4FyByM18jpCMWD6F6XASTauOoaxiHhpk1qGsYj5CpF3ySnz2XQypKgNAE0inbbero4uqpJrmJkW1L2JYD3dAQiRiIRA1EYiH3e9RAJBpCJBZCNGogWmWiqtpEvNpEPBFGVXUYsarQZZNAP7sup1Q8EUv255DN2BBXmagQgiClQjpjY8ptCSxcVo877p6CiZNiiFaFYIaN60qUlOJCeCmIyqbxo46ATMqCk1cImfqIfkBohFwmj3DUwJ+uW4gVX505WJ+5KKR1C3luhDV88Xg+ouCEBx0GX2edp5i9mooTkMs63j4CXHYFCM0NDWfMrMETf70UU+sSnjNVEJoYpvXDS9al1ehi5QYVJ8Bx5Iiar2mEVNLCvHvq8OT37oUZ1gedqk5QkmHZTtlDN93QoBtibKwA32RcHnwb8xbVYcPfrvCctOszDn3YgeNHu3GhOwXLKh8Bvr4rZjy2biHmL6676XC14gQMtcVDHW4mncftsydi/ffuhaYLKMXY+1/HsXfPcfR9kXFr/7ooe9QiBCGdsvH+2ycxf3HdTVdIK06ArothtpSIkM9LVI+PYP3TyxEydWQzeWz/2X78/qNziMTcEjV4+OhIOQkwDK0QBDDfXJm64gSETP2SoV7pKDzx3aUYXxOFbTl45bn38fHhTlSPj0BJVdEZVIa772HCpNjwdP5WLMYBgBnW3IwY7j6DdMrCVx66C3fNrwUA/GfLERz7304kxkUgHVX5CTxvSOD22ROLEmxVfAWEIwZ0z8HaOQe3zRiPbzx2N5gZ58704p03P0U8EYbjVH63DRGQz0vUTKrCHXMmD/qwW3kFhCMGDNOtA0nJePSJBa5Z8noETl6BRsngtdAEcpk8Vj7gJoJ+/nLLEsAMmBEdkWgI6aSFhY31uGuea3qymTzajnXDNLVRsalP0wQySQu33zkJ9z04G8xcmBC/dQlQCqGQ7q6CkIaHvj2vYOO7Owcw0JeFdh1V0lIF/5oukEnbSEyI4i+fahw+9nIrJ2KKXQ0QgrBo+QxMnhqH4yjoukBvTwZSMkxBUKr8oPv1HukoDCSzmP6lCVj/9HJMqo0XtUVZWSfsafbkadX48gOzhu2cJyJkM3k3CZNl3lLP7PalmVE9PoL7HpyNBx+ZAzOsF/14hYoS4DvX+782G9PqEyBvuTMDd82rxVe+MRudHf1uGYLLpxW6oWHCxBi+dMdEzFkwFYnxkcEC3FgaziVPretmjLsk3AtHdKz97tJREf0o5TrcUkxGjIrJuJHS+UqdpjK0pUklbtZUjgAefGiklJ7Kt+94aJPF3yVTllpYpTJKkNd/pauAUmZT40c4Y7opLyW7M/yOW/8ZDSUGTRce6DTc9o/KuSDyU3OCblx7oqQkIxoL4YN9p3Dkd+ddbRsFPogEwTR1jKuJYvrMGty9YCpmz60tgF/K0cQbXgHMrnaMnxhF+8meEXu6l2obIZO2kRrIYbQIew5ffsL48J3T+FVIQ8OsGqx+ZA5Wrr4DRFSy1XDjBCiANCCeiLgjHtfx2dwtQqNsc47njogIihlnTvTgZz9qxXtvncD6TStQe1tpRhXFzekNMGVa3A0Xr9OYuCMko+jxpur8E73MiIHqRBhHD3biH77/Bv7v8B8gBBV9dvXGCfBs4vwldQiF9TF3QBN7ZFTFTWQzefzzD/8Hbce63QGyIv6vN35Yh9dGbJhVg5l3TkIul6/YdFlpIzaFkKlBSoUX/nEvei9kvPyEK22CUNi28/XH5sLJyzF7Gq6Srknq6U5hx7YPrjngKDkBQnOX4+KVDbincTqSAzlo2tg8N0g6ClXVJg60nsbHhzqL5g+KghYBWL9pBcbVRGHlnFGRXJUyZP3v3R8XLVO/aQJIuGHbxClV2PT3X4WmE+ycMyZXglKMcMTAJ0f+gAvdqcKZSRVfAf5yvHNuLX7wT19HPBFGciBXOBpgLImmE1L9Fo4f7SrkQxUnYDgJU9D03LewZGUD0kkbmbRd8BdDz2q4dR93HLLjVO/oK8b5JNRMrsL3Nz+AQwc68OZ/fIxPj3Uj1W8VdkXSLXxkt9AI2bSNzrN9KIYjKHo9QAyxiwuW1WPBsnp0netH27FudJz+Ar0XMrBteesSINwd9NNnThiaj44eAvyCm++0iIDaugRq6xJjMiq62dxHL7W2FOo+anjR61YPRYvVNdPLpSVj6X6+YiqQsCxrhD0qgZTFp3R1dSVt284EUJTBdHnBST6fTwJwiAgCQO/AwMB5ry4erIRSJnGappgZPT09pzwiNAGAOzo6PiQi1jQtuPKiDP6wra3tXQDYt2+fOxz41ltv7cxZFgEQwSIoVR1JMQCts7Mzv2PHjl8REfbt26f8C5211tZ3DzOzCi50Lu2Fzrt27Wr2/IF7oXNLSwsRkdy5s/kHyWSShBBKqcASFVOkewQYtbe3Wy+++OIPmZk2b97MQ72zBgAvv/zKcx5blnsNeiA3fZ+84yhmtm3b5q1btz41FO9hvsF7Ubz++q6d/pJxHCdg4QZFKcWeOZeO4/BLL73048uBTxeRACKiV1999acPP/zwU/F4HACkZ5KCa2+vMdwXQih4m3/OnTvHu3fv/rtNmzb9iJk1IrpiJZK8u27xzDPPfPujj357JJ/PB+p8AzIwMMCtra3vrl+//ssjmZ2RyhrEzERECoDR1NT0raWNjY/WTZu2KB6PTzVNMwwElwEPj+3dMNOyrHR/f39He3v7B3v37t35/PPPv+2DP5Lmjwhkc3OztnbtWimlHFq4m7JkycpYVZVBlhUA74tpAplMRh04cCAJoGtIcENr1qwRLS0tI5qd/wcGYBNyH1B2jgAAAABJRU5ErkJggg==";
@@ -121,6 +121,17 @@ export default function TeamPlanner() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [viewMode, setViewMode] = useState("calendar"); // "calendar" | "list"
   const [activeFilters, setActiveFilters] = useState(() => new Set());
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+
+  function showToast(message) {
+    setToast(message);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  }
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
 
   function toggleFilter(key) {
     setActiveFilters((prev) => {
@@ -312,6 +323,7 @@ export default function TeamPlanner() {
       setSaving(false);
       setShowForm(false);
       setEditingId(null);
+      showToast(`${typeLabel(formType)} updated`);
       return;
     }
 
@@ -337,6 +349,7 @@ export default function TeamPlanner() {
     await fetchEntries();
     setSaving(false);
     setShowForm(false);
+    showToast(`${typeLabel(formType)} added`);
   }
 
   function canEditEntry(entry) {
@@ -356,6 +369,7 @@ export default function TeamPlanner() {
       return;
     }
     setEntries((prev) => prev.filter((e) => e.id !== id));
+    showToast(`${typeLabel(entry.type)} deleted`);
   }
 
   async function cycleStatus(id) {
@@ -372,6 +386,7 @@ export default function TeamPlanner() {
       const { error } = await supabase.from("entries").update({ status: next }).eq("id", id);
       if (error) { console.error("Status update error:", error); return; }
       setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, status: next } : e)));
+      showToast(next === "completed" ? "Marked complete" : "Marked not started");
       return;
     }
 
@@ -384,6 +399,7 @@ export default function TeamPlanner() {
       return;
     }
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, status: next } : e)));
+    showToast(`Status: ${statusInfo(next).label}`);
   }
 
   function headInfo(headId) {
@@ -990,6 +1006,20 @@ export default function TeamPlanner() {
           >
             + Event
           </button>
+        </div>
+      )}
+
+      {toast && (
+        <div style={{
+          position: "sticky", bottom: canManageOwn && !showForm ? 68 : 8, left: 0, right: 0,
+          margin: "0 16px", display: "flex", justifyContent: "center", pointerEvents: "none",
+        }}>
+          <div style={{
+            background: "#202124", color: "#fff", fontSize: 12.5, fontWeight: 500,
+            padding: "8px 16px", borderRadius: 999, boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+          }}>
+            {toast}
+          </div>
         </div>
       )}
     </div>
