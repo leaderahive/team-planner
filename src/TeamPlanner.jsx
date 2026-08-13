@@ -130,20 +130,142 @@ function generateOccurrences(startKey, untilKey, freq) {
 // which is informational only and does not affect placement.
 export default function TeamPlanner() {
   const today = new Date();
-  const [currentUserId, setCurrentUserId] = useState(() => {
-    try {
-      return localStorage.getItem("planner:userId") || "";
-    } catch (e) {
-      return "";
-    }
-  });
+
+  // Real auth: `session` comes from Supabase (survives refresh/close automatically,
+  // same "stay logged in until you log out" behavior as most apps). `profile` links
+  // that authenticated account to one of the 16 known team members via the
+  // `profiles` table, so the rest of the app can keep using PEOPLE/roles as before.
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
+  const currentUserId = profile?.person_id || "";
   const currentUser = personById(currentUserId);
   const isOwner = currentUser?.role === "owner";
   const isHead = currentUser?.role === "head";
   const isMember = currentUser?.role === "member";
   const canManageOwn = isOwner || isHead; // can add/edit/delete their own entries
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) {
+        setSession(data.session);
+        setAuthLoaded(true);
+      }
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => {
+      cancelled = true;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!session) {
+      setProfile(null);
+      return;
+    }
+    (async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      if (!cancelled) {
+        if (error) console.error("Profile fetch error:", error);
+        setProfile(data || null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session]);
+
+  async function logOut() {
+    await supabase.auth.signOut();
+    setSession(null);
+    setProfile(null);
+  }
+
+  async function handleSignUp() {
+    setAuthError("");
+    if (!signupPersonId) {
+      setAuthError("Pick your name first.");
+      return;
+    }
+    if (!authEmail.trim() || !authPassword) {
+      setAuthError("Enter an email and password.");
+      return;
+    }
+    if (authPassword.length < 6) {
+      setAuthError("Password needs to be at least 6 characters.");
+      return;
+    }
+    setAuthBusy(true);
+    const { data, error } = await supabase.auth.signUp({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+    if (error) {
+      setAuthError(error.message);
+      setAuthBusy(false);
+      return;
+    }
+    // If email confirmation is required, there's no session yet — the profile
+    // gets linked once they confirm and their first sign-in fires onAuthStateChange.
+    // If confirmation is off, `data.session` exists immediately and we can link now.
+    if (data.user) {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .insert({ id: data.user.id, person_id: signupPersonId, email: authEmail.trim() });
+      if (profileError) {
+        console.error("Profile link error:", profileError);
+        if (profileError.code === "23505" || /unique/i.test(profileError.message || "")) {
+          setAuthError(`${personById(signupPersonId)?.name} already has an account. If that's you, log in instead — otherwise pick a different name.`);
+          setAuthBusy(false);
+          return;
+        }
+      }
+    }
+    setAuthBusy(false);
+    if (data.session) {
+      setSession(data.session);
+    } else {
+      setAuthMessage("Check your email for a confirmation link, then sign in below.");
+      setAuthMode("signin");
+      setAuthPassword("");
+    }
+  }
+
+  async function handleSignIn() {
+    setAuthError("");
+    if (!authEmail.trim() || !authPassword) {
+      setAuthError("Enter your email and password.");
+      return;
+    }
+    setAuthBusy(true);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+    setAuthBusy(false);
+    if (error) {
+      setAuthError(error.message);
+      return;
+    }
+    setSession(data.session);
+  }
+
   const [pickerName, setPickerName] = useState("");
   const [showOwnerLogin, setShowOwnerLogin] = useState(false);
+  const [authMode, setAuthMode] = useState("signin"); // "signin" | "signup-name" | "signup-details"
+  const [signupPersonId, setSignupPersonId] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [viewMode, setViewMode] = useState("calendar"); // "calendar" | "list"
   const [activeFilters, setActiveFilters] = useState(() => new Set());
@@ -166,21 +288,6 @@ export default function TeamPlanner() {
       else next.add(key);
       return next;
     });
-  }
-
-  function chooseIdentity(id) {
-    setCurrentUserId(id);
-    try {
-      localStorage.setItem("planner:userId", id);
-    } catch (e) {
-      // ignore — worst case, they just re-pick next visit
-    }
-  }
-  function switchIdentity() {
-    setCurrentUserId("");
-    try {
-      localStorage.removeItem("planner:userId");
-    } catch (e) {}
   }
 
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -511,9 +618,67 @@ export default function TeamPlanner() {
     .filter((row) => row.total > 0)
     .sort((a, b) => b.rate - a.rate || b.total - a.total);
 
-  if (!currentUser) {
+  if (!authLoaded) {
+    return (
+      <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", maxWidth: 420, margin: "0 auto", padding: "32px 20px" }}>
+        <div style={{ fontSize: 13, color: "#70757a" }}>Loading…</div>
+      </div>
+    );
+  }
+
+  if (!session || !currentUser) {
     const visiblePeople = PEOPLE.filter((p) => p.role !== "owner");
     const matches = visiblePeople.filter((p) => p.name.toLowerCase().includes(pickerName.trim().toLowerCase()));
+    const nameChoices = showOwnerLogin ? OWNERS : matches;
+
+    // Signed in but no linked profile — happens if profile-linking failed after
+    // signup, or an account exists with no roster match. Offer a way to relink
+    // rather than silently stranding them on a blank screen.
+    if (session && !currentUser) {
+      return (
+        <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", maxWidth: 420, margin: "0 auto", padding: "32px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
+            <img src={LOGO_SRC} alt="Leadera logo" style={{ width: 40, height: 40, borderRadius: 9, flexShrink: 0 }} />
+            <div>
+              <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Team planner</h1>
+              <p style={{ fontSize: 13, color: "#5f6368", margin: "2px 0 0" }}>One more step</p>
+            </div>
+          </div>
+          <div style={{ fontSize: 13, color: "#5f6368", marginBottom: 14 }}>
+            Your account isn't linked to a name yet. Pick your name to finish setting up.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {visiblePeople.map((p) => (
+              <button
+                key={p.id}
+                onClick={async () => {
+                  const { error } = await supabase
+                    .from("profiles")
+                    .insert({ id: session.user.id, person_id: p.id, email: session.user.email });
+                  if (!error) {
+                    const { data } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+                    setProfile(data || null);
+                  }
+                }}
+                style={{
+                  textAlign: "left", padding: "11px 14px", borderRadius: 10,
+                  border: "1px solid #dadce0", background: "#fff", cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 14, fontWeight: 500, color: "#202124" }}>{p.name}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={logOut}
+            style={{ marginTop: 20, border: "none", background: "transparent", color: "#1a73e8", fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+          >
+            Log out
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", maxWidth: 420, margin: "0 auto", padding: "32px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
@@ -521,12 +686,57 @@ export default function TeamPlanner() {
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Team planner</h1>
             <p style={{ fontSize: 13, color: "#5f6368", margin: "2px 0 0" }}>
-              {showOwnerLogin ? "Owner access" : "Who's this?"}
+              {authMode === "signin" ? "Log in" : "Create your account"}
             </p>
           </div>
         </div>
 
-        {!showOwnerLogin ? (
+        {authMessage && (
+          <div style={{ fontSize: 12.5, color: "#188038", background: "#E6F4EA", padding: "8px 12px", borderRadius: 8, marginBottom: 14 }}>
+            {authMessage}
+          </div>
+        )}
+
+        {authMode === "signin" && (
+          <>
+            <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Email</div>
+            <input
+              value={authEmail}
+              onChange={(e) => { setAuthEmail(e.target.value); if (authError) setAuthError(""); }}
+              placeholder="you@example.com"
+              type="email"
+              style={{ ...inputStyle, marginBottom: 10 }}
+            />
+            <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Password</div>
+            <input
+              value={authPassword}
+              onChange={(e) => { setAuthPassword(e.target.value); if (authError) setAuthError(""); }}
+              placeholder="••••••••"
+              type="password"
+              style={{ ...inputStyle, marginBottom: 10 }}
+            />
+            {authError && <div style={{ fontSize: 12, color: "#c5221f", marginBottom: 10 }}>{authError}</div>}
+            <button
+              onClick={handleSignIn}
+              disabled={authBusy}
+              style={{
+                width: "100%", padding: "10px 0", borderRadius: 8, border: "none",
+                background: "#1a73e8", color: "#fff", fontSize: 14, fontWeight: 600,
+                cursor: authBusy ? "default" : "pointer", opacity: authBusy ? 0.7 : 1, marginBottom: 12,
+              }}
+            >
+              {authBusy ? "Logging in…" : "Log in"}
+            </button>
+            <button
+              onClick={() => { setAuthMode("signup-name"); setAuthError(""); setAuthMessage(""); }}
+              style={{ width: "100%", border: "none", background: "transparent", color: "#1a73e8", fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+            >
+              New here? Create an account
+            </button>
+          </>
+        )}
+
+        {authMode === "signup-name" && (
           <>
             <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Find your name</div>
             <input
@@ -536,10 +746,10 @@ export default function TeamPlanner() {
               style={{ ...inputStyle, marginBottom: 14 }}
             />
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {matches.map((p) => (
+              {nameChoices.map((p) => (
                 <button
                   key={p.id}
-                  onClick={() => chooseIdentity(p.id)}
+                  onClick={() => { setSignupPersonId(p.id); setAuthMode("signup-details"); }}
                   style={{
                     textAlign: "left", padding: "11px 14px", borderRadius: 10,
                     border: "1px solid #dadce0", background: "#fff", cursor: "pointer",
@@ -551,47 +761,76 @@ export default function TeamPlanner() {
                     fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 999,
                     color: p.color || OWNER_COLOR, background: p.bg || OWNER_BG,
                   }}>
-                    {p.role === "head" ? p.programme : "Member"}
+                    {p.role === "head" ? p.programme : p.role === "owner" ? p.title : "Member"}
                   </span>
                 </button>
               ))}
-              {matches.length === 0 && (
+              {nameChoices.length === 0 && (
                 <div style={{ fontSize: 13, color: "#70757a", padding: "8px 0" }}>No one matches that name.</div>
               )}
             </div>
-            <button
-              onClick={() => setShowOwnerLogin(true)}
-              style={{ marginTop: 28, border: "none", background: "transparent", color: "#9aa0a6", fontSize: 11.5, cursor: "pointer", padding: 0, textDecoration: "underline" }}
-            >
-              Owner access
-            </button>
-          </>
-        ) : (
-          <>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {OWNERS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => chooseIdentity(p.id)}
-                  style={{
-                    textAlign: "left", padding: "11px 14px", borderRadius: 10,
-                    border: "1px solid #dadce0", background: "#fff", cursor: "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                  }}
-                >
-                  <span style={{ fontSize: 14, fontWeight: 500, color: "#202124" }}>{p.name}</span>
-                  <span style={{
-                    fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 999,
-                    color: OWNER_COLOR, background: OWNER_BG,
-                  }}>
-                    {p.title}
-                  </span>
-                </button>
-              ))}
+            {!showOwnerLogin ? (
+              <button
+                onClick={() => setShowOwnerLogin(true)}
+                style={{ marginTop: 28, border: "none", background: "transparent", color: "#9aa0a6", fontSize: 11.5, cursor: "pointer", padding: 0, textDecoration: "underline" }}
+              >
+                Owner access
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowOwnerLogin(false)}
+                style={{ marginTop: 16, border: "none", background: "transparent", color: "#1a73e8", fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+              >
+                ← Back
+              </button>
+            )}
+            <div style={{ marginTop: 20 }}>
+              <button
+                onClick={() => { setAuthMode("signin"); setAuthError(""); }}
+                style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 12.5, cursor: "pointer", padding: 0 }}
+              >
+                ← Already have an account? Log in
+              </button>
             </div>
+          </>
+        )}
+
+        {authMode === "signup-details" && (
+          <>
+            <div style={{ fontSize: 12.5, color: "#5f6368", marginBottom: 14 }}>
+              Signing up as <strong style={{ color: "#202124" }}>{personById(signupPersonId)?.name}</strong>
+            </div>
+            <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Email</div>
+            <input
+              value={authEmail}
+              onChange={(e) => { setAuthEmail(e.target.value); if (authError) setAuthError(""); }}
+              placeholder="you@example.com"
+              type="email"
+              style={{ ...inputStyle, marginBottom: 10 }}
+            />
+            <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Password</div>
+            <input
+              value={authPassword}
+              onChange={(e) => { setAuthPassword(e.target.value); if (authError) setAuthError(""); }}
+              placeholder="At least 6 characters"
+              type="password"
+              style={{ ...inputStyle, marginBottom: 10 }}
+            />
+            {authError && <div style={{ fontSize: 12, color: "#c5221f", marginBottom: 10 }}>{authError}</div>}
             <button
-              onClick={() => setShowOwnerLogin(false)}
-              style={{ marginTop: 16, border: "none", background: "transparent", color: "#1a73e8", fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+              onClick={handleSignUp}
+              disabled={authBusy}
+              style={{
+                width: "100%", padding: "10px 0", borderRadius: 8, border: "none",
+                background: "#1a73e8", color: "#fff", fontSize: 14, fontWeight: 600,
+                cursor: authBusy ? "default" : "pointer", opacity: authBusy ? 0.7 : 1, marginBottom: 12,
+              }}
+            >
+              {authBusy ? "Creating account…" : "Create account"}
+            </button>
+            <button
+              onClick={() => setAuthMode("signup-name")}
+              style={{ width: "100%", border: "none", background: "transparent", color: "#5f6368", fontSize: 12.5, cursor: "pointer", padding: 0 }}
             >
               ← Back
             </button>
@@ -623,10 +862,10 @@ export default function TeamPlanner() {
           {isOwner ? ` · ${currentUser.title}` : isHead ? ` · ${currentUser.programme}` : ""}
         </span>
         <button
-          onClick={switchIdentity}
+          onClick={logOut}
           style={{ border: "none", background: "transparent", color: "#1a73e8", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
         >
-          Switch
+          Log out
         </button>
       </div>
 
