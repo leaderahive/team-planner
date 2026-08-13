@@ -641,7 +641,7 @@ export default function TeamPlanner() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
             <img src={LOGO_SRC} alt="Leadera logo" style={{ width: 40, height: 40, borderRadius: 9, flexShrink: 0 }} />
             <div>
-              <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Team planner</h1>
+              <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Leadera Family</h1>
               <p style={{ fontSize: 13, color: "#5f6368", margin: "2px 0 0" }}>One more step</p>
             </div>
           </div>
@@ -699,7 +699,7 @@ export default function TeamPlanner() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
           <img src={LOGO_SRC} alt="Leadera logo" style={{ width: 40, height: 40, borderRadius: 9, flexShrink: 0 }} />
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Team planner</h1>
+            <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Leadera Family</h1>
             <p style={{ fontSize: 13, color: "#5f6368", margin: "2px 0 0" }}>
               {authMode === "signin" ? "Log in" : "Create your account"}
             </p>
@@ -864,7 +864,7 @@ export default function TeamPlanner() {
           style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0 }}
         />
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Team planner</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Leadera Family</h1>
           <p style={{ fontSize: 13, color: "#5f6368", margin: "2px 0 0" }}>
             Everyone's tasks and meetings, one place
           </p>
