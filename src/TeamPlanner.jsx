@@ -635,6 +635,7 @@ export default function TeamPlanner() {
     // signup, or an account exists with no roster match. Offer a way to relink
     // rather than silently stranding them on a blank screen.
     if (session && !currentUser) {
+      const linkChoices = showOwnerLogin ? OWNERS : visiblePeople;
       return (
         <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", maxWidth: 420, margin: "0 auto", padding: "32px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
@@ -647,17 +648,23 @@ export default function TeamPlanner() {
           <div style={{ fontSize: 13, color: "#5f6368", marginBottom: 14 }}>
             Your account isn't linked to a name yet. Pick your name to finish setting up.
           </div>
+          {authError && <div style={{ fontSize: 12, color: "#c5221f", marginBottom: 12 }}>{authError}</div>}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {visiblePeople.map((p) => (
+            {linkChoices.map((p) => (
               <button
                 key={p.id}
                 onClick={async () => {
+                  setAuthError("");
                   const { error } = await supabase
                     .from("profiles")
                     .insert({ id: session.user.id, person_id: p.id, email: session.user.email });
                   if (!error) {
                     const { data } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
                     setProfile(data || null);
+                  } else if (error.code === "23505" || /unique/i.test(error.message || "")) {
+                    setAuthError(`${p.name} already has an account. If that's not you, pick a different name.`);
+                  } else {
+                    setAuthError("Couldn't link that name. Try again.");
                   }
                 }}
                 style={{
@@ -670,11 +677,19 @@ export default function TeamPlanner() {
             ))}
           </div>
           <button
-            onClick={logOut}
-            style={{ marginTop: 20, border: "none", background: "transparent", color: "#1a73e8", fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+            onClick={() => setShowOwnerLogin((v) => !v)}
+            style={{ marginTop: 20, border: "none", background: "transparent", color: showOwnerLogin ? "#1a73e8" : "#9aa0a6", fontSize: 11.5, fontWeight: showOwnerLogin ? 600 : 400, cursor: "pointer", padding: 0, textDecoration: showOwnerLogin ? "none" : "underline" }}
           >
-            Log out
+            {showOwnerLogin ? "← Back" : "Owner access"}
           </button>
+          <div style={{ marginTop: 16 }}>
+            <button
+              onClick={logOut}
+              style={{ border: "none", background: "transparent", color: "#1a73e8", fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+            >
+              Log out
+            </button>
+          </div>
         </div>
       );
     }
