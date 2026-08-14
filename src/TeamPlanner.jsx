@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { supabase } from "./supabaseClient.js";
 
 const LOGO_SRC = "data:image/png;base64,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";
@@ -98,12 +98,32 @@ function typeLabel(type) {
 
 function pad(n) { return n < 10 ? "0" + n : "" + n; }
 function toKey(date) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
+
+// Returns the Monday of the week containing the given date, matching the
+// Mon-first week layout already used throughout the app's calendars.
+function startOfWeek(date) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
+  const diff = day === 0 ? -6 : 1 - day; // shift so Monday becomes the anchor
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 function fmtLong(date) {
   return date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }
 function fmtShort(dateKey) {
   const d = new Date(dateKey + "T00:00:00");
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Formats a "HH:MM" (24-hour, from a <input type="time">) into "2:00 PM" style.
+function fmtTime(hhmm) {
+  if (!hhmm) return "";
+  const [h, m] = hhmm.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
 }
 
 // Generates the list of occurrence dates (as "YYYY-MM-DD" keys) for a recurring
@@ -1635,17 +1655,6 @@ function AnalyticsScreen({ currentUser, isOwner, isHead, showToast }) {
         data={facultyByDept.map((d) => ({ label: d.name, value: d.count, color: d.color, suffix: "" }))}
         maxValue={Math.max(1, ...facultyByDept.map((d) => d.count))}
       />
-
-      {facultyList.length > 0 && (
-        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
-          {facultyList.map((f) => (
-            <div key={f.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", background: "#f8f9fa", borderRadius: 8 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 500, color: "#202124" }}>{f.name}</span>
-              <span style={{ fontSize: 11, color: "#5f6368" }}>{f.subject || "—"} · {f.department}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -1743,6 +1752,162 @@ function EnrollmentTrendLine({ snapshots }) {
 // AcademicsScreen — class schedule, faculty directory, and
 // auto-ranked instructor performance per department.
 // ============================================================
+// Weekly timetable grid: hourly rows down the side, 7 day columns across the
+// top, classes placed in the row matching their start_time's hour. Colored
+// by department to stay consistent with the rest of the app.
+const TIMETABLE_HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8am - 8pm
+
+function WeekTimetable({ classes, weekStart, onPrevWeek, onNextWeek, onToday }) {
+  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+  const todayKeyVal = toKey(new Date());
+
+  function classesFor(dateKey, hour) {
+    return classes.filter((c) => {
+      if (c.class_date !== dateKey) return false;
+      if (!c.start_time) return hour === TIMETABLE_HOURS[0]; // no time set — show in first slot rather than hide it
+      const classHour = parseInt(c.start_time.split(":")[0], 10);
+      return classHour === hour;
+    });
+  }
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const rangeLabel = `${weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${weekEnd.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <button onClick={onPrevWeek} aria-label="Previous week" style={navBtnStyle}>‹</button>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#202124" }}>{rangeLabel}</div>
+          <button onClick={onToday} style={{ border: "none", background: "transparent", color: "#1a73e8", fontSize: 10.5, fontWeight: 600, cursor: "pointer", padding: 0 }}>Today</button>
+        </div>
+        <button onClick={onNextWeek} aria-label="Next week" style={navBtnStyle}>›</button>
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "44px repeat(7, minmax(74px, 1fr))", minWidth: 560 }}>
+          <div />
+          {days.map((d, i) => {
+            const key = toKey(d);
+            const isToday = key === todayKeyVal;
+            return (
+              <div key={i} style={{ textAlign: "center", padding: "4px 2px", borderBottom: "1px solid #e8eaed" }}>
+                <div style={{ fontSize: 9.5, color: "#70757a", fontWeight: 600 }}>{dayNames[i]}</div>
+                <div style={{
+                  fontSize: 12, fontWeight: 700, color: isToday ? "#fff" : "#202124",
+                  background: isToday ? "#1a73e8" : "transparent", borderRadius: 999,
+                  width: 22, height: 22, lineHeight: "22px", margin: "2px auto 0",
+                }}>
+                  {d.getDate()}
+                </div>
+              </div>
+            );
+          })}
+
+          {TIMETABLE_HOURS.map((hour) => (
+            <Fragment key={hour}>
+              <div style={{ fontSize: 9.5, color: "#9aa0a6", padding: "4px 2px 0 0", textAlign: "right", borderTop: "1px solid #f1f3f4" }}>
+                {hour % 12 === 0 ? 12 : hour % 12}{hour < 12 ? "am" : "pm"}
+              </div>
+              {days.map((d, i) => {
+                const key = toKey(d);
+                const cellClasses = classesFor(key, hour);
+                return (
+                  <div key={i} style={{ borderTop: "1px solid #f1f3f4", borderLeft: "1px solid #f1f3f4", minHeight: 30, padding: 2 }}>
+                    {cellClasses.map((c) => {
+                      const d2 = deptInfo(c.department);
+                      return (
+                        <div key={c.id} title={`${c.subject} · ${c.faculty_name || "Unassigned"}`} style={{
+                          background: d2.color, color: "#fff", borderRadius: 4, padding: "2px 4px",
+                          fontSize: 8.5, fontWeight: 600, marginBottom: 2, lineHeight: 1.2,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {c.subject}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Month timetable: reuses the same day-grid pattern as the Planner calendar,
+// showing a colored dot per class that day; tap a day to see its classes below.
+function MonthTimetable({ classes, monthCursor, onPrevMonth, onNextMonth, selectedDay, onSelectDay }) {
+  const { year, month } = monthCursor;
+  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const first = new Date(year, month, 1);
+  const startWeekday = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const todayKeyVal = toKey(new Date());
+  const byDate = {};
+  for (const c of classes) {
+    if (!byDate[c.class_date]) byDate[c.class_date] = [];
+    byDate[c.class_date].push(c);
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <button onClick={onPrevMonth} aria-label="Previous month" style={navBtnStyle}>‹</button>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#202124" }}>{MONTH_NAMES[month]} {year}</div>
+        <button onClick={onNextMonth} aria-label="Next month" style={navBtnStyle}>›</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+        {dayNames.map((d) => (
+          <div key={d} style={{ textAlign: "center", fontSize: 9.5, fontWeight: 600, color: "#70757a", padding: "2px 0" }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+        {cells.map((date, idx) => {
+          if (!date) return <div key={idx} />;
+          const key = toKey(date);
+          const dayClasses = byDate[key] || [];
+          const isToday = key === todayKeyVal;
+          const isSelected = key === selectedDay;
+          return (
+            <button
+              key={idx}
+              onClick={() => onSelectDay(key)}
+              style={{
+                border: "none", background: isSelected ? "#1a73e8" : isToday ? "#e8f0fe" : "transparent",
+                borderRadius: 8, padding: "5px 2px", cursor: "pointer",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minHeight: 38,
+              }}
+            >
+              <span style={{ fontSize: 11.5, fontWeight: isToday || isSelected ? 700 : 400, color: isSelected ? "#fff" : isToday ? "#1a73e8" : "#202124" }}>
+                {date.getDate()}
+              </span>
+              <div style={{ display: "flex", gap: 1.5 }}>
+                {dayClasses.slice(0, 3).map((c, i) => (
+                  <span key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: isSelected ? "#fff" : deptInfo(c.department).color }} />
+                ))}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState([]);
@@ -1750,6 +1915,10 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
   const [deptFilter, setDeptFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [scheduleView, setScheduleView] = useState("week"); // "week" | "month" | "list"
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
+  const [selectedDay, setSelectedDay] = useState(() => toKey(new Date()));
   const [showClassForm, setShowClassForm] = useState(false);
   const [showFacultyForm, setShowFacultyForm] = useState(false);
 
@@ -1842,6 +2011,7 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
     setClassError("");
     if (!classSubject.trim()) { setClassError("Enter a subject."); return; }
     if (!classDate) { setClassError("Pick a date."); return; }
+    if (!classTime) { setClassError("Pick a start time."); return; }
     if (!canManageDept(classDept)) { setClassError("You can only add classes for your own department."); return; }
     setClassSaving(true);
     const facultyMember = facultyList.find((f) => f.id === classFacultyId);
@@ -1852,7 +2022,7 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
       faculty_id: classFacultyId || null,
       faculty_name: facultyMember ? facultyMember.name : null,
       class_date: classDate,
-      class_time: classTime.trim(),
+      start_time: classTime, // "HH:MM" from the time input
       status: "scheduled",
       notes: classNotes.trim(),
     });
@@ -1997,6 +2167,27 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
         </>
       )}
 
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {[
+          { id: "week", label: "Week" },
+          { id: "month", label: "Month" },
+          { id: "list", label: "List" },
+        ].map((v) => (
+          <button
+            key={v.id}
+            onClick={() => setScheduleView(v.id)}
+            style={{
+              flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              border: scheduleView === v.id ? "2px solid #1a73e8" : "1px solid #dadce0",
+              background: scheduleView === v.id ? "#E8F0FE" : "#fff",
+              color: scheduleView === v.id ? "#1a73e8" : "#5f6368",
+            }}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
       {showClassForm && (
         <div style={{ background: "#f8f9fa", borderRadius: 10, padding: 12, marginBottom: 14 }}>
           <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Department</div>
@@ -2060,8 +2251,8 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
               <input type="date" value={classDate} onChange={(e) => setClassDate(e.target.value)} style={inputStyle} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Time</div>
-              <input value={classTime} onChange={(e) => setClassTime(e.target.value)} placeholder="2:00 PM" style={inputStyle} />
+              <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Start time</div>
+              <input type="time" value={classTime} onChange={(e) => setClassTime(e.target.value)} style={inputStyle} />
             </div>
           </div>
           <div style={{ fontSize: 11, color: "#70757a", margin: "8px 0 6px" }}>Notes (optional)</div>
@@ -2077,7 +2268,72 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
         </div>
       )}
 
-      {filteredClasses.length === 0 ? (
+      {scheduleView === "week" && (
+        <div style={{ marginBottom: 20 }}>
+          <WeekTimetable
+            classes={filteredClasses}
+            weekStart={weekStart}
+            onPrevWeek={() => setWeekStart((w) => { const d = new Date(w); d.setDate(d.getDate() - 7); return d; })}
+            onNextWeek={() => setWeekStart((w) => { const d = new Date(w); d.setDate(d.getDate() + 7); return d; })}
+            onToday={() => setWeekStart(startOfWeek(new Date()))}
+          />
+        </div>
+      )}
+
+      {scheduleView === "month" && (
+        <div style={{ marginBottom: 20 }}>
+          <MonthTimetable
+            classes={filteredClasses}
+            monthCursor={monthCursor}
+            onPrevMonth={() => setMonthCursor((m) => (m.month === 0 ? { year: m.year - 1, month: 11 } : { year: m.year, month: m.month - 1 }))}
+            onNextMonth={() => setMonthCursor((m) => (m.month === 11 ? { year: m.year + 1, month: 0 } : { year: m.year, month: m.month + 1 }))}
+            selectedDay={selectedDay}
+            onSelectDay={setSelectedDay}
+          />
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#202124", margin: "12px 0 8px" }}>
+            {fmtLong(new Date(selectedDay + "T00:00:00"))}
+          </div>
+          {filteredClasses.filter((c) => c.class_date === selectedDay).length === 0 ? (
+            <div style={{ fontSize: 12.5, color: "#70757a" }}>No classes this day.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {filteredClasses.filter((c) => c.class_date === selectedDay).map((c) => {
+                const d = deptInfo(c.department);
+                const s = classStatusInfo[c.status] || classStatusInfo.scheduled;
+                const canEdit = canManageDept(c.department);
+                return (
+                  <div key={c.id} style={{ background: d.bg, borderRadius: 10, padding: "8px 10px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: d.color, flexShrink: 0 }} />
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#202124" }}>{c.subject}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "#5f6368", paddingLeft: 13, marginTop: 1 }}>
+                        {c.department} · {c.faculty_name || "Unassigned"}{c.start_time ? ` · ${fmtTime(c.start_time)}` : ""}
+                      </div>
+                      {canEdit ? (
+                        <button onClick={() => cycleClassStatus(c)} style={{ marginLeft: 13, marginTop: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 999, color: s.color, background: s.bg }}>
+                          {s.label}
+                        </button>
+                      ) : (
+                        <span style={{ display: "inline-block", marginLeft: 13, marginTop: 4, fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 999, color: s.color, background: s.bg }}>
+                          {s.label}
+                        </span>
+                      )}
+                    </div>
+                    {canEdit && (
+                      <button onClick={() => deleteClass(c)} aria-label="Delete" style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 14, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {scheduleView === "list" && (
+      filteredClasses.length === 0 ? (
         <div style={{ fontSize: 12.5, color: "#70757a", padding: "8px 0 16px" }}>No classes match these filters.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
@@ -2093,7 +2349,7 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: "#202124" }}>{c.subject}</span>
                   </div>
                   <div style={{ fontSize: 11.5, color: "#5f6368", paddingLeft: 13, marginTop: 1 }}>
-                    {c.department} · {c.faculty_name || "Unassigned"} · {fmtShort(c.class_date)}{c.class_time ? ` · ${c.class_time}` : ""}
+                    {c.department} · {c.faculty_name || "Unassigned"} · {fmtShort(c.class_date)}{c.start_time ? ` · ${fmtTime(c.start_time)}` : ""}
                   </div>
                   {canEdit ? (
                     <button
@@ -2115,6 +2371,7 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
             );
           })}
         </div>
+      )
       )}
 
       {/* Faculty directory */}
@@ -2152,18 +2409,29 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
       {facultyList.length === 0 ? (
         <div style={{ fontSize: 12.5, color: "#70757a", padding: "8px 0 16px" }}>No faculty added yet.</div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 20 }}>
-          {facultyList.map((f) => {
-            const canEdit = canManageDept(f.department);
+        <div style={{ marginBottom: 20 }}>
+          {DEPARTMENTS.map((d) => {
+            const deptFaculty = facultyList.filter((f) => f.department === d.name);
+            if (deptFaculty.length === 0) return null;
             return (
-              <div key={f.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", background: "#f8f9fa", borderRadius: 8 }}>
-                <div>
-                  <span style={{ fontSize: 12.5, fontWeight: 500, color: "#202124" }}>{f.name}</span>
-                  <span style={{ fontSize: 11, color: "#5f6368", marginLeft: 6 }}>{f.subject || "—"} · {f.department}</span>
+              <div key={d.name} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: d.color, marginBottom: 5 }}>{d.name}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  {deptFaculty.map((f) => {
+                    const canEdit = canManageDept(f.department);
+                    return (
+                      <div key={f.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", background: d.bg, borderRadius: 8 }}>
+                        <div>
+                          <span style={{ fontSize: 12.5, fontWeight: 500, color: "#202124" }}>{f.name}</span>
+                          <span style={{ fontSize: 11, color: "#5f6368", marginLeft: 6 }}>{f.subject || "—"}</span>
+                        </div>
+                        {canEdit && (
+                          <button onClick={() => deleteFaculty(f)} aria-label="Delete" style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 14, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                {canEdit && (
-                  <button onClick={() => deleteFaculty(f)} aria-label="Delete" style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 14, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
-                )}
               </div>
             );
           })}
