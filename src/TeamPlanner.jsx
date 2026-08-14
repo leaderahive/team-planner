@@ -62,6 +62,14 @@ function headStyleFor(id) {
   return null;
 }
 
+// The 4 departments, one per head — reused across Analytics and Academics
+// so department names always stay consistent with the existing head roster.
+const DEPARTMENTS = HEADS.map((h) => ({ name: h.programme, color: h.color, bg: h.bg }));
+
+function deptInfo(name) {
+  return DEPARTMENTS.find((d) => d.name === name) || { name, color: "#5f6368", bg: "#f1f3f4" };
+}
+
 const MEETING_COLOR = "#E37400";
 const MEETING_BG = "#FEF3E0";
 const EVENT_COLOR = "#0B8043";
@@ -267,6 +275,7 @@ export default function TeamPlanner() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [activeScreen, setActiveScreen] = useState("planner"); // "planner" | "analytics" | "academics"
   const [viewMode, setViewMode] = useState("calendar"); // "calendar" | "list"
   const [activeFilters, setActiveFilters] = useState(() => new Set());
   const [toast, setToast] = useState(null);
@@ -856,7 +865,7 @@ export default function TeamPlanner() {
   }
 
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", maxWidth: 420, margin: "0 auto", paddingBottom: 90 }}>
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", maxWidth: 420, margin: "0 auto", paddingBottom: 150 }}>
       <div style={{ padding: "16px 16px 8px", display: "flex", alignItems: "center", gap: 10 }}>
         <img
           src={LOGO_SRC}
@@ -884,6 +893,8 @@ export default function TeamPlanner() {
         </button>
       </div>
 
+      {activeScreen === "planner" && (
+      <>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "0 16px 12px" }}>
         {HEADS.map((h) => (
           <span key={h.id} style={{ fontSize: 11.5, fontWeight: 600, color: "#fff", background: h.color, padding: "3px 9px", borderRadius: 999 }}>
@@ -1333,7 +1344,7 @@ export default function TeamPlanner() {
       )}
 
       {!showForm && canManageOwn && (
-        <div style={{ position: "sticky", bottom: 0, left: 0, right: 0, display: "flex", gap: 6, padding: "10px 12px", background: "#fff", borderTop: "1px solid #e8eaed" }}>
+        <div style={{ position: "sticky", bottom: 58, left: 0, right: 0, display: "flex", gap: 6, padding: "10px 12px", background: "#fff", borderTop: "1px solid #e8eaed", zIndex: 4 }}>
           <button
             onClick={() => openForm("task")}
             style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "#1a73e8", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
@@ -1354,10 +1365,20 @@ export default function TeamPlanner() {
           </button>
         </div>
       )}
+      </>
+      )}
+
+      {activeScreen === "analytics" && (
+        <AnalyticsScreen currentUser={currentUser} isOwner={isOwner} isHead={isHead} showToast={showToast} />
+      )}
+
+      {activeScreen === "academics" && (
+        <AcademicsScreen currentUser={currentUser} isOwner={isOwner} isHead={isHead} showToast={showToast} />
+      )}
 
       {toast && (
         <div style={{
-          position: "sticky", bottom: canManageOwn && !showForm ? 68 : 8, left: 0, right: 0,
+          position: "sticky", bottom: (activeScreen === "planner" && canManageOwn && !showForm) ? 126 : 58, left: 0, right: 0,
           margin: "0 16px", display: "flex", justifyContent: "center", pointerEvents: "none",
         }}>
           <div style={{
@@ -1368,6 +1389,30 @@ export default function TeamPlanner() {
           </div>
         </div>
       )}
+
+      <div style={{
+        position: "sticky", bottom: 0, left: 0, right: 0, display: "flex",
+        background: "#fff", borderTop: "1px solid #e8eaed", zIndex: 5,
+      }}>
+        {[
+          { id: "planner", label: "Planner", icon: "📅" },
+          { id: "analytics", label: "Analytics", icon: "📊" },
+          { id: "academics", label: "Academics", icon: "🎓" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveScreen(tab.id)}
+            style={{
+              flex: 1, padding: "10px 0 8px", border: "none", background: "transparent",
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer",
+              color: activeScreen === tab.id ? "#1a73e8" : "#5f6368",
+            }}
+          >
+            <span style={{ fontSize: 17 }}>{tab.icon}</span>
+            <span style={{ fontSize: 10.5, fontWeight: activeScreen === tab.id ? 700 : 500 }}>{tab.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1400,6 +1445,674 @@ function FilterChip({ label, active, color, bg, onClick }) {
 
 // Simple scrollable feed: overdue tasks first (if any), then everything from today
 // onward sorted by date. Respects whatever filters are active on the calendar view.
+// ============================================================
+// AnalyticsScreen — department performance, enrollment trends,
+// faculty overview. Reads from `entries` (existing tasks),
+// `enrollment_snapshots`, and `faculty` (new tables).
+// ============================================================
+function AnalyticsScreen({ currentUser, isOwner, isHead, showToast }) {
+  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState([]);
+  const [snapshots, setSnapshots] = useState([]);
+  const [facultyList, setFacultyList] = useState([]);
+  const [showEnrollForm, setShowEnrollForm] = useState(false);
+  const [enrollDept, setEnrollDept] = useState(DEPARTMENTS[0]?.name || "");
+  const [enrollCount, setEnrollCount] = useState("");
+  const [enrollDate, setEnrollDate] = useState(() => toKey(new Date()));
+  const [enrollSaving, setEnrollSaving] = useState(false);
+  const [enrollError, setEnrollError] = useState("");
+
+  const canManage = isOwner || isHead;
+
+  const fetchAll = useCallback(async () => {
+    const [entriesRes, snapshotsRes, facultyRes] = await Promise.all([
+      supabase.from("entries").select("*").eq("type", "task"),
+      supabase.from("enrollment_snapshots").select("*").order("recorded_date", { ascending: true }),
+      supabase.from("faculty").select("*").order("name", { ascending: true }),
+    ]);
+    if (entriesRes.error) console.error("Analytics tasks fetch error:", entriesRes.error);
+    if (snapshotsRes.error) console.error("Enrollment fetch error:", snapshotsRes.error);
+    if (facultyRes.error) console.error("Faculty fetch error:", facultyRes.error);
+    setTasks(entriesRes.data || []);
+    setSnapshots(snapshotsRes.data || []);
+    setFacultyList(facultyRes.data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchAll();
+    const channel = supabase
+      .channel("analytics-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "enrollment_snapshots" }, fetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "faculty" }, fetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "entries" }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchAll]);
+
+  // ---- KPI row ----
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((t) => t.status === "completed").length;
+  const overallRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const totalFaculty = facultyList.length;
+
+  // ---- Department task completion (bar) ----
+  const deptStats = DEPARTMENTS.map((d) => {
+    const deptTasks = tasks.filter((t) => {
+      const h = HEADS.find((x) => x.id === t.head);
+      return h && h.programme === d.name;
+    });
+    const done = deptTasks.filter((t) => t.status === "completed").length;
+    const rate = deptTasks.length > 0 ? Math.round((done / deptTasks.length) * 100) : 0;
+    return { ...d, total: deptTasks.length, done, rate };
+  });
+
+  // ---- Enrollment trend (line-ish, latest per department) ----
+  const latestByDept = {};
+  for (const s of snapshots) {
+    if (!latestByDept[s.department] || s.recorded_date > latestByDept[s.department].recorded_date) {
+      latestByDept[s.department] = s;
+    }
+  }
+  const totalStudents = Object.values(latestByDept).reduce((sum, s) => sum + (s.student_count || 0), 0);
+
+  // ---- Faculty per department (bar) ----
+  const facultyByDept = DEPARTMENTS.map((d) => ({
+    ...d,
+    count: facultyList.filter((f) => f.department === d.name).length,
+  }));
+
+  async function submitEnrollment() {
+    setEnrollError("");
+    if (!enrollCount || Number(enrollCount) < 0) {
+      setEnrollError("Enter a valid student count.");
+      return;
+    }
+    setEnrollSaving(true);
+    const { error } = await supabase.from("enrollment_snapshots").insert({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      department: enrollDept,
+      student_count: Number(enrollCount),
+      recorded_date: enrollDate,
+      entered_by: currentUser?.id || null,
+    });
+    setEnrollSaving(false);
+    if (error) {
+      console.error("Enrollment insert error:", error);
+      setEnrollError("Couldn't save. Try again.");
+      return;
+    }
+    setShowEnrollForm(false);
+    setEnrollCount("");
+    showToast("Enrollment recorded");
+    fetchAll();
+  }
+
+  if (loading) {
+    return <div style={{ padding: "24px 16px", fontSize: 13, color: "#70757a" }}>Loading analytics…</div>;
+  }
+
+  return (
+    <div style={{ padding: "8px 16px 12px" }}>
+      <h2 style={{ fontSize: 16, fontWeight: 700, color: "#202124", margin: "8px 0 12px" }}>Analytics</h2>
+
+      {/* KPI snapshot row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, marginBottom: 20 }}>
+        <SummaryStat label="Students" value={totalStudents} color="#202124" />
+        <SummaryStat label="Task rate" value={`${overallRate}%`} color="#188038" />
+        <SummaryStat label="Faculty" value={totalFaculty} color="#1a73e8" />
+        <SummaryStat label="Depts" value={DEPARTMENTS.length} color="#8430CE" />
+      </div>
+
+      {/* Section 1: Department Performance */}
+      <SectionHeading title="Department performance" subtitle="Task completion rate by department" />
+      <BarChartBlock
+        data={deptStats.map((d) => ({ label: d.name, value: d.rate, color: d.color, suffix: "%" }))}
+        maxValue={100}
+      />
+
+      {/* Section 2: Enrollment Trends */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 24 }}>
+        <SectionHeading title="Enrollment" subtitle="Latest recorded students per department" noMargin />
+        {canManage && (
+          <button
+            onClick={() => { setShowEnrollForm((v) => !v); setEnrollError(""); }}
+            style={{ border: "none", background: "#E8F0FE", color: "#1a73e8", fontSize: 11.5, fontWeight: 600, padding: "5px 10px", borderRadius: 999, cursor: "pointer" }}
+          >
+            {showEnrollForm ? "Cancel" : "+ Record"}
+          </button>
+        )}
+      </div>
+
+      {showEnrollForm && (
+        <div style={{ background: "#f8f9fa", borderRadius: 10, padding: 12, marginTop: 8, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Department</div>
+          <select value={enrollDept} onChange={(e) => setEnrollDept(e.target.value)} style={{ ...inputStyle, marginBottom: 8 }}>
+            {DEPARTMENTS.map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
+          </select>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Student count</div>
+              <input type="number" min="0" value={enrollCount} onChange={(e) => setEnrollCount(e.target.value)} placeholder="e.g. 45" style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Date</div>
+              <input type="date" value={enrollDate} onChange={(e) => setEnrollDate(e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+          {enrollError && <div style={{ fontSize: 12, color: "#c5221f", marginTop: 8 }}>{enrollError}</div>}
+          <button
+            onClick={submitEnrollment}
+            disabled={enrollSaving}
+            style={{ width: "100%", marginTop: 10, padding: "9px 0", borderRadius: 8, border: "none", background: "#1a73e8", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: enrollSaving ? "default" : "pointer", opacity: enrollSaving ? 0.7 : 1 }}
+          >
+            {enrollSaving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      )}
+
+      {Object.keys(latestByDept).length === 0 ? (
+        <div style={{ fontSize: 12.5, color: "#70757a", padding: "8px 0" }}>No enrollment data recorded yet.</div>
+      ) : (
+        <BarChartBlock
+          data={DEPARTMENTS.map((d) => ({
+            label: d.name,
+            value: latestByDept[d.name]?.student_count || 0,
+            color: d.color,
+            suffix: "",
+          }))}
+          maxValue={Math.max(1, ...Object.values(latestByDept).map((s) => s.student_count))}
+        />
+      )}
+
+      {snapshots.length > 0 && (
+        <EnrollmentTrendLine snapshots={snapshots} />
+      )}
+
+      {/* Section 3: Faculty Overview */}
+      <SectionHeading title="Faculty overview" subtitle="Instructor count by department" />
+      <BarChartBlock
+        data={facultyByDept.map((d) => ({ label: d.name, value: d.count, color: d.color, suffix: "" }))}
+        maxValue={Math.max(1, ...facultyByDept.map((d) => d.count))}
+      />
+
+      {facultyList.length > 0 && (
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
+          {facultyList.map((f) => (
+            <div key={f.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", background: "#f8f9fa", borderRadius: 8 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 500, color: "#202124" }}>{f.name}</span>
+              <span style={{ fontSize: 11, color: "#5f6368" }}>{f.subject || "—"} · {f.department}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionHeading({ title, subtitle, noMargin }) {
+  return (
+    <div style={{ marginTop: noMargin ? 0 : 4, marginBottom: 10 }}>
+      <div style={{ fontSize: 13.5, fontWeight: 700, color: "#202124" }}>{title}</div>
+      {subtitle && <div style={{ fontSize: 11, color: "#70757a", marginTop: 1 }}>{subtitle}</div>}
+    </div>
+  );
+}
+
+// Simple horizontal bar chart — each row is a labeled bar, width proportional
+// to value/maxValue. Deliberately simple (no chart library) since the data
+// is small (4 departments) and this keeps the bundle light.
+function BarChartBlock({ data, maxValue }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {data.map((d) => (
+        <div key={d.label}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 3 }}>
+            <span style={{ fontWeight: 600, color: "#202124" }}>{d.label}</span>
+            <span style={{ color: "#5f6368" }}>{d.value}{d.suffix}</span>
+          </div>
+          <div style={{ height: 8, background: "#f1f3f4", borderRadius: 999, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", width: `${maxValue > 0 ? Math.min(100, (d.value / maxValue) * 100) : 0}%`,
+              background: d.color, borderRadius: 999, transition: "width 0.3s ease",
+            }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Lightweight SVG line chart showing enrollment over time, one line per
+// department, using plain SVG (no chart library) since the data volume is
+// small and this avoids adding a dependency for a handful of points.
+function EnrollmentTrendLine({ snapshots }) {
+  const width = 300;
+  const height = 120;
+  const padding = 24;
+
+  const dates = [...new Set(snapshots.map((s) => s.recorded_date))].sort();
+  if (dates.length < 2) {
+    return (
+      <div style={{ fontSize: 11.5, color: "#70757a", marginTop: 10 }}>
+        Record at least 2 dates per department to see a trend line.
+      </div>
+    );
+  }
+
+  const maxCount = Math.max(1, ...snapshots.map((s) => s.student_count));
+  const xFor = (date) => {
+    const idx = dates.indexOf(date);
+    return padding + (idx / (dates.length - 1)) * (width - padding * 2);
+  };
+  const yFor = (count) => height - padding - (count / maxCount) * (height - padding * 2);
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto" }}>
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#dadce0" strokeWidth="1" />
+        {DEPARTMENTS.map((d) => {
+          const points = snapshots
+            .filter((s) => s.department === d.name)
+            .sort((a, b) => a.recorded_date.localeCompare(b.recorded_date));
+          if (points.length < 2) return null;
+          const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(p.recorded_date)} ${yFor(p.student_count)}`).join(" ");
+          return (
+            <g key={d.name}>
+              <path d={pathD} fill="none" stroke={d.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              {points.map((p, i) => (
+                <circle key={i} cx={xFor(p.recorded_date)} cy={yFor(p.student_count)} r="2.5" fill={d.color} />
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+        {DEPARTMENTS.map((d) => (
+          <span key={d.name} style={{ fontSize: 10, color: "#5f6368", display: "flex", alignItems: "center", gap: 3 }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: d.color, display: "inline-block" }} />
+            {d.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// AcademicsScreen — class schedule, faculty directory, and
+// auto-ranked instructor performance per department.
+// ============================================================
+function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
+  const [loading, setLoading] = useState(true);
+  const [classes, setClasses] = useState([]);
+  const [facultyList, setFacultyList] = useState([]);
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [showClassForm, setShowClassForm] = useState(false);
+  const [showFacultyForm, setShowFacultyForm] = useState(false);
+
+  const [classDept, setClassDept] = useState(DEPARTMENTS[0]?.name || "");
+  const [classSubject, setClassSubject] = useState("");
+  const [classFacultyId, setClassFacultyId] = useState("");
+  const [classDate, setClassDate] = useState(() => toKey(new Date()));
+  const [classTime, setClassTime] = useState("");
+  const [classNotes, setClassNotes] = useState("");
+  const [classError, setClassError] = useState("");
+  const [classSaving, setClassSaving] = useState(false);
+
+  const [facName, setFacName] = useState("");
+  const [facDept, setFacDept] = useState(DEPARTMENTS[0]?.name || "");
+  const [facSubject, setFacSubject] = useState("");
+  const [facError, setFacError] = useState("");
+  const [facSaving, setFacSaving] = useState(false);
+
+  // Only owners can manage every department; heads can only manage their own
+  // department's classes and faculty, matching the same pattern as tasks.
+  const myDept = currentUser?.programme || null;
+  function canManageDept(deptName) {
+    if (isOwner) return true;
+    if (isHead) return deptName === myDept;
+    return false;
+  }
+
+  const fetchAll = useCallback(async () => {
+    const [classesRes, facultyRes] = await Promise.all([
+      supabase.from("class_sessions").select("*").order("class_date", { ascending: true }),
+      supabase.from("faculty").select("*").order("name", { ascending: true }),
+    ]);
+    if (classesRes.error) console.error("Classes fetch error:", classesRes.error);
+    if (facultyRes.error) console.error("Faculty fetch error:", facultyRes.error);
+    setClasses(classesRes.data || []);
+    setFacultyList(facultyRes.data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchAll();
+    const channel = supabase
+      .channel("academics-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_sessions" }, fetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "faculty" }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchAll]);
+
+  useEffect(() => {
+    if (isHead && myDept) {
+      setClassDept(myDept);
+      setFacDept(myDept);
+    }
+  }, [isHead, myDept]);
+
+  const filteredClasses = classes.filter((c) => {
+    if (deptFilter !== "all" && c.department !== deptFilter) return false;
+    if (statusFilter !== "all" && c.status !== statusFilter) return false;
+    return true;
+  });
+
+  const facultyForClassDept = facultyList.filter((f) => f.department === classDept);
+
+  // Instructor performance: completion rate = completed sessions / total
+  // sessions scheduled for them, ranked highest-first, within each department.
+  const performanceByDept = DEPARTMENTS.map((d) => {
+    const deptFaculty = facultyList.filter((f) => f.department === d.name);
+    const ranked = deptFaculty
+      .map((f) => {
+        const theirClasses = classes.filter((c) => c.faculty_id === f.id);
+        const completed = theirClasses.filter((c) => c.status === "completed").length;
+        const rate = theirClasses.length > 0 ? Math.round((completed / theirClasses.length) * 100) : null;
+        return { ...f, total: theirClasses.length, completed, rate };
+      })
+      .filter((f) => f.total > 0)
+      .sort((a, b) => b.rate - a.rate || b.total - a.total);
+    return { ...d, ranked };
+  });
+
+  async function submitClass() {
+    setClassError("");
+    if (!classSubject.trim()) { setClassError("Enter a subject."); return; }
+    if (!classDate) { setClassError("Pick a date."); return; }
+    if (!canManageDept(classDept)) { setClassError("You can only add classes for your own department."); return; }
+    setClassSaving(true);
+    const facultyMember = facultyList.find((f) => f.id === classFacultyId);
+    const { error } = await supabase.from("class_sessions").insert({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      department: classDept,
+      subject: classSubject.trim(),
+      faculty_id: classFacultyId || null,
+      faculty_name: facultyMember ? facultyMember.name : null,
+      class_date: classDate,
+      class_time: classTime.trim(),
+      status: "scheduled",
+      notes: classNotes.trim(),
+    });
+    setClassSaving(false);
+    if (error) {
+      console.error("Class insert error:", error);
+      setClassError("Couldn't save. Try again.");
+      return;
+    }
+    setShowClassForm(false);
+    setClassSubject(""); setClassFacultyId(""); setClassTime(""); setClassNotes("");
+    showToast("Class scheduled");
+    fetchAll();
+  }
+
+  async function cycleClassStatus(cls) {
+    if (!canManageDept(cls.department)) return;
+    const order = ["scheduled", "completed", "cancelled"];
+    const next = order[(order.indexOf(cls.status) + 1) % order.length];
+    const { error } = await supabase.from("class_sessions").update({ status: next }).eq("id", cls.id);
+    if (error) { console.error("Class status update error:", error); return; }
+    showToast(`Class marked ${next}`);
+    fetchAll();
+  }
+
+  async function deleteClass(cls) {
+    if (!canManageDept(cls.department)) return;
+    const { error } = await supabase.from("class_sessions").delete().eq("id", cls.id);
+    if (error) { console.error("Class delete error:", error); return; }
+    showToast("Class removed");
+    fetchAll();
+  }
+
+  async function submitFaculty() {
+    setFacError("");
+    if (!facName.trim()) { setFacError("Enter a name."); return; }
+    if (!canManageDept(facDept)) { setFacError("You can only add faculty for your own department."); return; }
+    setFacSaving(true);
+    const { error } = await supabase.from("faculty").insert({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: facName.trim(),
+      department: facDept,
+      subject: facSubject.trim(),
+    });
+    setFacSaving(false);
+    if (error) {
+      console.error("Faculty insert error:", error);
+      setFacError("Couldn't save. Try again.");
+      return;
+    }
+    setShowFacultyForm(false);
+    setFacName(""); setFacSubject("");
+    showToast("Faculty added");
+    fetchAll();
+  }
+
+  async function deleteFaculty(f) {
+    if (!canManageDept(f.department)) return;
+    const { error } = await supabase.from("faculty").delete().eq("id", f.id);
+    if (error) { console.error("Faculty delete error:", error); return; }
+    showToast("Faculty removed");
+    fetchAll();
+  }
+
+  if (loading) {
+    return <div style={{ padding: "24px 16px", fontSize: 13, color: "#70757a" }}>Loading academics…</div>;
+  }
+
+  const classStatusInfo = {
+    scheduled: { label: "Scheduled", color: "#1a73e8", bg: "#E8F0FE" },
+    completed: { label: "Completed", color: "#188038", bg: "#E6F4EA" },
+    cancelled: { label: "Cancelled", color: "#5f6368", bg: "#f1f3f4" },
+  };
+
+  return (
+    <div style={{ padding: "8px 16px 12px" }}>
+      <h2 style={{ fontSize: 16, fontWeight: 700, color: "#202124", margin: "8px 0 12px" }}>Academics</h2>
+
+      {/* Class Schedule */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <SectionHeading title="Class schedule" subtitle="Subject-wise sessions by department" noMargin />
+        <button
+          onClick={() => { setShowClassForm((v) => !v); setClassError(""); }}
+          style={{ border: "none", background: "#E8F0FE", color: "#1a73e8", fontSize: 11.5, fontWeight: 600, padding: "5px 10px", borderRadius: 999, cursor: "pointer" }}
+        >
+          {showClassForm ? "Cancel" : "+ Class"}
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        <FilterChip label="All depts" active={deptFilter === "all"} color="#5f6368" bg="#f1f3f4" onClick={() => setDeptFilter("all")} />
+        {DEPARTMENTS.map((d) => (
+          <FilterChip key={d.name} label={d.name} active={deptFilter === d.name} color={d.color} bg={d.bg} onClick={() => setDeptFilter(d.name)} />
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+        <FilterChip label="All" active={statusFilter === "all"} color="#5f6368" bg="#f1f3f4" onClick={() => setStatusFilter("all")} />
+        <FilterChip label="Scheduled" active={statusFilter === "scheduled"} color="#1a73e8" bg="#E8F0FE" onClick={() => setStatusFilter("scheduled")} />
+        <FilterChip label="Completed" active={statusFilter === "completed"} color="#188038" bg="#E6F4EA" onClick={() => setStatusFilter("completed")} />
+        <FilterChip label="Cancelled" active={statusFilter === "cancelled"} color="#5f6368" bg="#f1f3f4" onClick={() => setStatusFilter("cancelled")} />
+      </div>
+
+      {showClassForm && (
+        <div style={{ background: "#f8f9fa", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Department</div>
+          <select
+            value={classDept}
+            onChange={(e) => { setClassDept(e.target.value); setClassFacultyId(""); }}
+            disabled={isHead}
+            style={{ ...inputStyle, marginBottom: 8, opacity: isHead ? 0.7 : 1 }}
+          >
+            {DEPARTMENTS.map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
+          </select>
+          <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Subject</div>
+          <input value={classSubject} onChange={(e) => setClassSubject(e.target.value)} placeholder="e.g. Contract Law Basics" style={{ ...inputStyle, marginBottom: 8 }} />
+          <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Faculty (optional)</div>
+          <select value={classFacultyId} onChange={(e) => setClassFacultyId(e.target.value)} style={{ ...inputStyle, marginBottom: 8 }}>
+            <option value="">— Unassigned —</option>
+            {facultyForClassDept.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Date</div>
+              <input type="date" value={classDate} onChange={(e) => setClassDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Time</div>
+              <input value={classTime} onChange={(e) => setClassTime(e.target.value)} placeholder="2:00 PM" style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: "#70757a", margin: "8px 0 6px" }}>Notes (optional)</div>
+          <textarea value={classNotes} onChange={(e) => setClassNotes(e.target.value)} rows={2} style={{ ...inputStyle, resize: "none" }} />
+          {classError && <div style={{ fontSize: 12, color: "#c5221f", marginTop: 8 }}>{classError}</div>}
+          <button
+            onClick={submitClass}
+            disabled={classSaving}
+            style={{ width: "100%", marginTop: 10, padding: "9px 0", borderRadius: 8, border: "none", background: "#1a73e8", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: classSaving ? "default" : "pointer", opacity: classSaving ? 0.7 : 1 }}
+          >
+            {classSaving ? "Saving…" : "Save class"}
+          </button>
+        </div>
+      )}
+
+      {filteredClasses.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: "#70757a", padding: "8px 0 16px" }}>No classes match these filters.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+          {filteredClasses.map((c) => {
+            const d = deptInfo(c.department);
+            const s = classStatusInfo[c.status] || classStatusInfo.scheduled;
+            const canEdit = canManageDept(c.department);
+            return (
+              <div key={c.id} style={{ background: d.bg, borderRadius: 10, padding: "8px 10px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: d.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: "#202124" }}>{c.subject}</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "#5f6368", paddingLeft: 13, marginTop: 1 }}>
+                    {c.department} · {c.faculty_name || "Unassigned"} · {fmtShort(c.class_date)}{c.class_time ? ` · ${c.class_time}` : ""}
+                  </div>
+                  {canEdit ? (
+                    <button
+                      onClick={() => cycleClassStatus(c)}
+                      style={{ marginLeft: 13, marginTop: 4, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 999, color: s.color, background: s.bg }}
+                    >
+                      {s.label} · tap to change
+                    </button>
+                  ) : (
+                    <span style={{ display: "inline-block", marginLeft: 13, marginTop: 4, fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 999, color: s.color, background: s.bg }}>
+                      {s.label}
+                    </span>
+                  )}
+                </div>
+                {canEdit && (
+                  <button onClick={() => deleteClass(c)} aria-label="Delete" style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 15, cursor: "pointer", padding: 4, lineHeight: 1, flexShrink: 0 }}>×</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Faculty directory */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <SectionHeading title="Faculty directory" noMargin />
+        <button
+          onClick={() => { setShowFacultyForm((v) => !v); setFacError(""); }}
+          style={{ border: "none", background: "#E8F0FE", color: "#1a73e8", fontSize: 11.5, fontWeight: 600, padding: "5px 10px", borderRadius: 999, cursor: "pointer" }}
+        >
+          {showFacultyForm ? "Cancel" : "+ Faculty"}
+        </button>
+      </div>
+
+      {showFacultyForm && (
+        <div style={{ background: "#f8f9fa", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Name</div>
+          <input value={facName} onChange={(e) => setFacName(e.target.value)} placeholder="Full name" style={{ ...inputStyle, marginBottom: 8 }} />
+          <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Department</div>
+          <select value={facDept} onChange={(e) => setFacDept(e.target.value)} disabled={isHead} style={{ ...inputStyle, marginBottom: 8, opacity: isHead ? 0.7 : 1 }}>
+            {DEPARTMENTS.map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
+          </select>
+          <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Subject (optional)</div>
+          <input value={facSubject} onChange={(e) => setFacSubject(e.target.value)} placeholder="e.g. Contract Law" style={inputStyle} />
+          {facError && <div style={{ fontSize: 12, color: "#c5221f", marginTop: 8 }}>{facError}</div>}
+          <button
+            onClick={submitFaculty}
+            disabled={facSaving}
+            style={{ width: "100%", marginTop: 10, padding: "9px 0", borderRadius: 8, border: "none", background: "#1a73e8", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: facSaving ? "default" : "pointer", opacity: facSaving ? 0.7 : 1 }}
+          >
+            {facSaving ? "Saving…" : "Save faculty"}
+          </button>
+        </div>
+      )}
+
+      {facultyList.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: "#70757a", padding: "8px 0 16px" }}>No faculty added yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 20 }}>
+          {facultyList.map((f) => {
+            const canEdit = canManageDept(f.department);
+            return (
+              <div key={f.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", background: "#f8f9fa", borderRadius: 8 }}>
+                <div>
+                  <span style={{ fontSize: 12.5, fontWeight: 500, color: "#202124" }}>{f.name}</span>
+                  <span style={{ fontSize: 11, color: "#5f6368", marginLeft: 6 }}>{f.subject || "—"} · {f.department}</span>
+                </div>
+                {canEdit && (
+                  <button onClick={() => deleteFaculty(f)} aria-label="Delete" style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 14, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Instructor performance */}
+      <SectionHeading title="Top instructors" subtitle="Ranked by class completion rate, per department" />
+      {performanceByDept.every((d) => d.ranked.length === 0) ? (
+        <div style={{ fontSize: 12.5, color: "#70757a", padding: "8px 0" }}>
+          No completed classes yet — rankings appear once sessions are marked Completed.
+        </div>
+      ) : (
+        performanceByDept.map((d) => (
+          d.ranked.length === 0 ? null : (
+            <div key={d.name} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: d.color, marginBottom: 6 }}>{d.name}</div>
+              <div style={{ border: "1px solid #dadce0", borderRadius: 10, overflow: "hidden" }}>
+                {d.ranked.map((f, idx) => (
+                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderTop: idx === 0 ? "none" : "1px solid #f1f3f4", background: idx === 0 ? "#FFFBEA" : "#fff" }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: idx === 0 ? "#B06000" : "#70757a", width: 18 }}>
+                      {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `${idx + 1}.`}
+                    </span>
+                    <span style={{ flex: 1, fontSize: 12.5, fontWeight: 500, color: "#202124" }}>{f.name}</span>
+                    <span style={{ fontSize: 11, color: "#70757a" }}>{f.completed}/{f.total}</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, minWidth: 36, textAlign: "right", color: f.rate >= 70 ? "#188038" : f.rate >= 40 ? "#B06000" : "#C5221F" }}>
+                      {f.rate}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        ))
+      )}
+    </div>
+  );
+}
+
 function ListView({ entries, todayKey, currentUser, isMember, headInfo, canEditEntry, openEditForm, deleteEntry, cycleStatus }) {
   const withDate = entries.filter((e) => e.dueDate);
   const overdue = withDate
