@@ -11,19 +11,19 @@ const PEOPLE = [
   { id: "anees", name: "Anees", role: "owner", title: "CEO" },
   { id: "malik", name: "Malik", role: "owner", title: "Admin" },
   { id: "sabeeh", name: "Sabeeh", role: "head", programme: "CUET", color: "#1E8E3E", bg: "#E6F4EA" },
-  { id: "naheema", name: "Naheema", role: "head", programme: "Hive", color: "#1A73E8", bg: "#E8F0FE" },
+  { id: "naheema", name: "Naheema", role: "head", programme: "Hive", color: "#1A73E8", bg: "#E8F0FE", extraDepts: ["CUET"] },
   { id: "azeem", name: "Azeem", role: "head", programme: "Legal", color: "#8430CE", bg: "#F3E8FD" },
   { id: "shafil", name: "Shafil", role: "head", programme: "Leadgen", color: "#B00020", bg: "#FCE8E8" },
-  { id: "safwan", name: "Safwan", role: "member" },
-  { id: "jazeem", name: "Jazeem", role: "member" },
-  { id: "rinsha", name: "Rinsha", role: "member" },
-  { id: "moosa", name: "Moosa", role: "member" },
-  { id: "shaheer", name: "Shaheer", role: "member" },
-  { id: "aslam", name: "Aslam", role: "member" },
-  { id: "mudassir", name: "Mudassir", role: "member" },
-  { id: "shahasad", name: "Shahasad", role: "member" },
-  { id: "asnah", name: "Asnah", role: "member" },
-  { id: "basith", name: "Basith", role: "member" },
+  { id: "safwan", name: "Safwan", role: "member", depts: ["CUET"] },
+  { id: "jazeem", name: "Jazeem", role: "member", depts: ["CUET"] },
+  { id: "rinsha", name: "Rinsha", role: "member", depts: ["Legal"] },
+  { id: "moosa", name: "Moosa", role: "member", depts: ["CUET"] },
+  { id: "shaheer", name: "Shaheer", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
+  { id: "aslam", name: "Aslam", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
+  { id: "mudassir", name: "Mudassir", role: "member", depts: [] },
+  { id: "shahasad", name: "Shahasad", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
+  { id: "asnah", name: "Asnah", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
+  { id: "basith", name: "Basith", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
 ];
 
 const OWNER_COLOR = "#3C4043";
@@ -68,6 +68,29 @@ const DEPARTMENTS = HEADS.map((h) => ({ name: h.programme, color: h.color, bg: h
 
 function deptInfo(name) {
   return DEPARTMENTS.find((d) => d.name === name) || { name, color: "#5f6368", bg: "#f1f3f4" };
+}
+
+// Chat rooms: General and Hive are open to everyone. The other three
+// department rooms are only visible to people with actual access to that
+// department (heads of that dept, owners, and specifically listed members).
+const CHAT_ROOMS = [
+  { id: "general", name: "General", color: "#5f6368", bg: "#f1f3f4" },
+  ...DEPARTMENTS.map((d) => ({ id: d.name.toLowerCase(), name: d.name, color: d.color, bg: d.bg })),
+];
+
+// Returns the list of room ids a given PEOPLE entry can see and post in.
+function roomsFor(person) {
+  if (!person) return [];
+  const rooms = new Set(["general", "hive"]); // always open to everyone
+  if (person.role === "owner") {
+    DEPARTMENTS.forEach((d) => rooms.add(d.name.toLowerCase()));
+  } else if (person.role === "head") {
+    rooms.add(person.programme.toLowerCase());
+    (person.extraDepts || []).forEach((d) => rooms.add(d.toLowerCase()));
+  } else {
+    (person.depts || []).forEach((d) => rooms.add(d.toLowerCase()));
+  }
+  return CHAT_ROOMS.filter((r) => rooms.has(r.id));
 }
 
 const MEETING_COLOR = "#E37400";
@@ -1396,6 +1419,10 @@ export default function TeamPlanner() {
         <AcademicsScreen currentUser={currentUser} isOwner={isOwner} isHead={isHead} showToast={showToast} />
       )}
 
+      {activeScreen === "chat" && (
+        <ChatScreen currentUser={currentUser} />
+      )}
+
       {toast && (
         <div style={{
           position: "sticky", bottom: (activeScreen === "planner" && canManageOwn && !showForm) ? 126 : 58, left: 0, right: 0,
@@ -1418,6 +1445,7 @@ export default function TeamPlanner() {
           { id: "planner", label: "Planner", icon: "📅" },
           { id: "analytics", label: "Analytics", icon: "📊" },
           { id: "academics", label: "Academics", icon: "🎓" },
+          { id: "chat", label: "Chat", icon: "💬" },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1903,6 +1931,170 @@ function MonthTimetable({ classes, monthCursor, onPrevMonth, onNextMonth, select
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// ChatScreen — a room switcher (General + department rooms this
+// person has access to) and a simple realtime text chat per room.
+// ============================================================
+function ChatScreen({ currentUser }) {
+  const myRooms = roomsFor(currentUser);
+  const [activeRoom, setActiveRoom] = useState(myRooms[0]?.id || "general");
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef(null);
+
+  const fetchMessages = useCallback(async (roomId) => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .select("*")
+      .eq("room", roomId)
+      .order("created_at", { ascending: true })
+      .limit(200); // most recent 200 in this room — plenty for a team of 16
+    if (error) console.error("Chat fetch error:", error);
+    setMessages(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchMessages(activeRoom);
+    const channel = supabase
+      .channel(`chat-${activeRoom}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `room=eq.${activeRoom}` }, (payload) => {
+        setMessages((prev) => [...prev, payload.new]);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [activeRoom, fetchMessages]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  async function sendMessage() {
+    const text = draft.trim();
+    if (!text || !currentUser) return;
+    setSending(true);
+    const { error } = await supabase.from("chat_messages").insert({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      room: activeRoom,
+      sender_id: currentUser.id,
+      sender_name: currentUser.name,
+      message: text,
+    });
+    setSending(false);
+    if (error) {
+      console.error("Send message error:", error);
+      return;
+    }
+    setDraft("");
+    // No local optimistic push needed — the realtime INSERT subscription
+    // above will deliver it back to us (and everyone else) in a moment.
+  }
+
+  // Turns plain URLs in a message into clickable links, since sharing
+  // meeting links is one of the main things this chat is for.
+  function renderMessageText(text) {
+    const parts = text.split(/(https?:\/\/[^\s]+)/g);
+    return parts.map((part, i) =>
+      /^https?:\/\//.test(part) ? (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: "#1a73e8", wordBreak: "break-all" }}>
+          {part}
+        </a>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    );
+  }
+
+  function fmtMsgTime(iso) {
+    const d = new Date(iso);
+    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+
+  const room = CHAT_ROOMS.find((r) => r.id === activeRoom);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 220px)", minHeight: 360 }}>
+      <div style={{ padding: "8px 16px 0" }}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: "#202124", margin: "8px 0 10px" }}>Chat</h2>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          {myRooms.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setActiveRoom(r.id)}
+              style={{
+                border: activeRoom === r.id ? `2px solid ${r.color}` : "1px solid #dadce0",
+                background: activeRoom === r.id ? r.bg : "#fff",
+                color: activeRoom === r.id ? r.color : "#5f6368",
+                fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 999, cursor: "pointer",
+              }}
+            >
+              {r.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "4px 16px" }}>
+        {loading ? (
+          <div style={{ fontSize: 13, color: "#70757a", padding: "20px 0", textAlign: "center" }}>Loading messages…</div>
+        ) : messages.length === 0 ? (
+          <div style={{ fontSize: 13, color: "#70757a", padding: "20px 0", textAlign: "center" }}>
+            No messages yet in {room?.name}. Say hello 👋
+          </div>
+        ) : (
+          messages.map((m) => {
+            const isMine = currentUser && m.sender_id === currentUser.id;
+            return (
+              <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: isMine ? "flex-end" : "flex-start", marginBottom: 8 }}>
+                {!isMine && <div style={{ fontSize: 10.5, fontWeight: 600, color: "#5f6368", marginBottom: 2, marginLeft: 4 }}>{m.sender_name}</div>}
+                <div style={{
+                  maxWidth: "78%", padding: "7px 11px", borderRadius: 14,
+                  background: isMine ? "#1a73e8" : "#f1f3f4",
+                  color: isMine ? "#fff" : "#202124",
+                  fontSize: 13, lineHeight: 1.4, wordBreak: "break-word",
+                  borderBottomRightRadius: isMine ? 4 : 14,
+                  borderBottomLeftRadius: isMine ? 14 : 4,
+                }}>
+                  {renderMessageText(m.message)}
+                </div>
+                <div style={{ fontSize: 9.5, color: "#9aa0a6", marginTop: 2, marginRight: isMine ? 4 : 0, marginLeft: isMine ? 0 : 4 }}>
+                  {fmtMsgTime(m.created_at)}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, padding: "10px 16px", borderTop: "1px solid #e8eaed", background: "#fff" }}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !sending) sendMessage(); }}
+          placeholder={`Message ${room?.name || ""}…`}
+          style={{ ...inputStyle, flex: 1 }}
+        />
+        <button
+          onClick={sendMessage}
+          disabled={sending || !draft.trim()}
+          style={{
+            border: "none", background: "#1a73e8", color: "#fff", borderRadius: 8, padding: "0 16px",
+            fontSize: 13, fontWeight: 600, cursor: sending || !draft.trim() ? "default" : "pointer",
+            opacity: sending || !draft.trim() ? 0.6 : 1,
+          }}
+        >
+          Send
+        </button>
       </div>
     </div>
   );
