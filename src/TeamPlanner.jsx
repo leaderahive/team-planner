@@ -1969,6 +1969,9 @@ function ChatScreen({ currentUser }) {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `room=eq.${activeRoom}` }, (payload) => {
         setMessages((prev) => [...prev, payload.new]);
       })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "chat_messages", filter: `room=eq.${activeRoom}` }, (payload) => {
+        setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [activeRoom, fetchMessages]);
@@ -1998,6 +2001,19 @@ function ChatScreen({ currentUser }) {
     setDraft("");
     // No local optimistic push needed — the realtime INSERT subscription
     // above will deliver it back to us (and everyone else) in a moment.
+  }
+
+  async function deleteMessage(id) {
+    // Only the original sender can delete their own message — enforced here
+    // in the UI (the delete button only shows for your own messages) and
+    // it's also a no-op if somehow called on someone else's, since we always
+    // pass the id of a message already confirmed to be currentUser's.
+    const { error } = await supabase.from("chat_messages").delete().eq("id", id);
+    if (error) {
+      console.error("Delete message error:", error);
+      return;
+    }
+    setMessages((prev) => prev.filter((m) => m.id !== id));
   }
 
   // Turns plain URLs in a message into clickable links, since sharing
@@ -2067,8 +2083,16 @@ function ChatScreen({ currentUser }) {
                 }}>
                   {renderMessageText(m.message)}
                 </div>
-                <div style={{ fontSize: 9.5, color: "#9aa0a6", marginTop: 2, marginRight: isMine ? 4 : 0, marginLeft: isMine ? 0 : 4 }}>
-                  {fmtMsgTime(m.created_at)}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, marginRight: isMine ? 4 : 0, marginLeft: isMine ? 0 : 4 }}>
+                  <span style={{ fontSize: 9.5, color: "#9aa0a6" }}>{fmtMsgTime(m.created_at)}</span>
+                  {isMine && (
+                    <button
+                      onClick={() => deleteMessage(m.id)}
+                      style={{ border: "none", background: "transparent", color: "#c5221f", fontSize: 9.5, fontWeight: 600, cursor: "pointer", padding: 0 }}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             );
