@@ -1760,6 +1760,11 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
   const [classTime, setClassTime] = useState("");
   const [classNotes, setClassNotes] = useState("");
   const [classError, setClassError] = useState("");
+  const [showQuickFaculty, setShowQuickFaculty] = useState(false);
+  const [quickFacName, setQuickFacName] = useState("");
+  const [quickFacSubject, setQuickFacSubject] = useState("");
+  const [quickFacError, setQuickFacError] = useState("");
+  const [quickFacSaving, setQuickFacSaving] = useState(false);
   const [classSaving, setClassSaving] = useState(false);
 
   const [facName, setFacName] = useState("");
@@ -1904,6 +1909,35 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
     fetchAll();
   }
 
+  // Same as submitFaculty, but used from inside the class form: adds the
+  // faculty member AND immediately selects them for the class being created,
+  // so the person doesn't have to cancel out, add faculty separately, then
+  // start the class form over from scratch.
+  async function submitQuickFaculty() {
+    setQuickFacError("");
+    if (!quickFacName.trim()) { setQuickFacError("Enter a name."); return; }
+    if (!canManageDept(classDept)) { setQuickFacError("You can only add faculty for your own department."); return; }
+    setQuickFacSaving(true);
+    const newId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const { error } = await supabase.from("faculty").insert({
+      id: newId,
+      name: quickFacName.trim(),
+      department: classDept,
+      subject: quickFacSubject.trim(),
+    });
+    setQuickFacSaving(false);
+    if (error) {
+      console.error("Quick faculty insert error:", error);
+      setQuickFacError("Couldn't save. Try again.");
+      return;
+    }
+    setShowQuickFaculty(false);
+    setQuickFacName(""); setQuickFacSubject("");
+    showToast(`${quickFacName.trim()} added`);
+    await fetchAll(); // make sure facultyList (and its <option>) exists before selecting it
+    setClassFacultyId(newId);
+  }
+
   async function deleteFaculty(f) {
     if (!canManageDept(f.department)) return;
     const { error } = await supabase.from("faculty").delete().eq("id", f.id);
@@ -1977,10 +2011,49 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
           <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Subject</div>
           <input value={classSubject} onChange={(e) => setClassSubject(e.target.value)} placeholder="e.g. Contract Law Basics" style={{ ...inputStyle, marginBottom: 8 }} />
           <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Faculty (optional)</div>
-          <select value={classFacultyId} onChange={(e) => setClassFacultyId(e.target.value)} style={{ ...inputStyle, marginBottom: 8 }}>
+          <select value={classFacultyId} onChange={(e) => setClassFacultyId(e.target.value)} style={{ ...inputStyle, marginBottom: 6 }}>
             <option value="">— Unassigned —</option>
             {facultyForClassDept.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
+          {!showQuickFaculty ? (
+            <button
+              onClick={() => setShowQuickFaculty(true)}
+              style={{ border: "none", background: "transparent", color: "#1a73e8", fontSize: 11.5, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 8 }}
+            >
+              + Add new faculty to {classDept}
+            </button>
+          ) : (
+            <div style={{ background: "#fff", border: "1px solid #dadce0", borderRadius: 8, padding: 10, marginBottom: 8 }}>
+              <input
+                value={quickFacName}
+                onChange={(e) => setQuickFacName(e.target.value)}
+                placeholder="Faculty name"
+                style={{ ...inputStyle, marginBottom: 6 }}
+              />
+              <input
+                value={quickFacSubject}
+                onChange={(e) => setQuickFacSubject(e.target.value)}
+                placeholder="Subject (optional)"
+                style={{ ...inputStyle, marginBottom: 8 }}
+              />
+              {quickFacError && <div style={{ fontSize: 11.5, color: "#c5221f", marginBottom: 6 }}>{quickFacError}</div>}
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={() => { setShowQuickFaculty(false); setQuickFacName(""); setQuickFacSubject(""); setQuickFacError(""); }}
+                  style={{ flex: 1, padding: "7px 0", borderRadius: 7, border: "1px solid #dadce0", background: "#fff", color: "#5f6368", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitQuickFaculty}
+                  disabled={quickFacSaving}
+                  style={{ flex: 1, padding: "7px 0", borderRadius: 7, border: "none", background: "#1a73e8", color: "#fff", fontSize: 12, fontWeight: 600, cursor: quickFacSaving ? "default" : "pointer", opacity: quickFacSaving ? 0.7 : 1 }}
+                >
+                  {quickFacSaving ? "Adding…" : "Add & select"}
+                </button>
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 11, color: "#70757a", marginBottom: 6 }}>Date</div>
