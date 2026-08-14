@@ -1749,6 +1749,7 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
   const [facultyList, setFacultyList] = useState([]);
   const [deptFilter, setDeptFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [showFilters, setShowFilters] = useState(false);
   const [showClassForm, setShowClassForm] = useState(false);
   const [showFacultyForm, setShowFacultyForm] = useState(false);
 
@@ -1810,6 +1811,9 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
     if (statusFilter !== "all" && c.status !== statusFilter) return false;
     return true;
   });
+
+  const activeFilterCount = (deptFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0);
+  const activeFilterLabel = activeFilterCount > 0 ? `Filters (${activeFilterCount} active)` : "Filters";
 
   const facultyForClassDept = facultyList.filter((f) => f.department === classDept);
 
@@ -1933,18 +1937,31 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        <FilterChip label="All depts" active={deptFilter === "all"} color="#5f6368" bg="#f1f3f4" onClick={() => setDeptFilter("all")} />
-        {DEPARTMENTS.map((d) => (
-          <FilterChip key={d.name} label={d.name} active={deptFilter === d.name} color={d.color} bg={d.bg} onClick={() => setDeptFilter(d.name)} />
-        ))}
-      </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-        <FilterChip label="All" active={statusFilter === "all"} color="#5f6368" bg="#f1f3f4" onClick={() => setStatusFilter("all")} />
-        <FilterChip label="Scheduled" active={statusFilter === "scheduled"} color="#1a73e8" bg="#E8F0FE" onClick={() => setStatusFilter("scheduled")} />
-        <FilterChip label="Completed" active={statusFilter === "completed"} color="#188038" bg="#E6F4EA" onClick={() => setStatusFilter("completed")} />
-        <FilterChip label="Cancelled" active={statusFilter === "cancelled"} color="#5f6368" bg="#f1f3f4" onClick={() => setStatusFilter("cancelled")} />
-      </div>
+      {classes.length > 0 && (
+        <button
+          onClick={() => setShowFilters((v) => !v)}
+          style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 11.5, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: showFilters ? 8 : 12, display: "flex", alignItems: "center", gap: 4 }}
+        >
+          {activeFilterLabel} {showFilters ? "▲" : "▼"}
+        </button>
+      )}
+
+      {showFilters && classes.length > 0 && (
+        <>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            <FilterChip label="All depts" active={deptFilter === "all"} color="#5f6368" bg="#f1f3f4" onClick={() => setDeptFilter("all")} />
+            {DEPARTMENTS.map((d) => (
+              <FilterChip key={d.name} label={d.name} active={deptFilter === d.name} color={d.color} bg={d.bg} onClick={() => setDeptFilter(d.name)} />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+            <FilterChip label="All" active={statusFilter === "all"} color="#5f6368" bg="#f1f3f4" onClick={() => setStatusFilter("all")} />
+            <FilterChip label="Scheduled" active={statusFilter === "scheduled"} color="#1a73e8" bg="#E8F0FE" onClick={() => setStatusFilter("scheduled")} />
+            <FilterChip label="Completed" active={statusFilter === "completed"} color="#188038" bg="#E6F4EA" onClick={() => setStatusFilter("completed")} />
+            <FilterChip label="Cancelled" active={statusFilter === "cancelled"} color="#5f6368" bg="#f1f3f4" onClick={() => setStatusFilter("cancelled")} />
+          </div>
+        </>
+      )}
 
       {showClassForm && (
         <div style={{ background: "#f8f9fa", borderRadius: 10, padding: 12, marginBottom: 14 }}>
