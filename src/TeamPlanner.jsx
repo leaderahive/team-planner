@@ -233,6 +233,22 @@ export default function TeamPlanner() {
     return () => { cancelled = true; };
   }, [session]);
 
+  // Heartbeat: while someone is logged in and has the app open, ping
+  // last_seen every 30 seconds. The Online Status panel considers anyone
+  // seen within the last 60 seconds to be "online" — two heartbeats of
+  // buffer so a single missed tick (e.g. brief network hiccup) doesn't
+  // flip someone to offline prematurely.
+  useEffect(() => {
+    if (!profile?.id) return;
+    async function ping() {
+      const { error } = await supabase.from("profiles").update({ last_seen: new Date().toISOString() }).eq("id", profile.id);
+      if (error) console.error("last_seen heartbeat error:", error);
+    }
+    ping(); // immediately on login, don't wait 30s for the first one
+    const interval = setInterval(ping, 30000);
+    return () => clearInterval(interval);
+  }, [profile?.id]);
+
   async function logOut() {
     await supabase.auth.signOut();
     setSession(null);
@@ -306,6 +322,10 @@ export default function TeamPlanner() {
       return;
     }
     setSession(data.session);
+    // Record this login so owners can see it in the Online Status panel.
+    // Fire-and-forget — a failure here shouldn't block the person logging in.
+    supabase.from("profiles").update({ last_login: new Date().toISOString() }).eq("id", data.session.user.id)
+      .then(({ error: e }) => { if (e) console.error("last_login update error:", e); });
   }
 
   const [pickerName, setPickerName] = useState("");
@@ -1420,7 +1440,7 @@ export default function TeamPlanner() {
       )}
 
       {activeScreen === "chat" && (
-        <ChatScreen currentUser={currentUser} />
+        <ChatScreen currentUser={currentUser} isOwner={isOwner} />
       )}
 
       {toast && (
@@ -1940,13 +1960,101 @@ function MonthTimetable({ classes, monthCursor, onPrevMonth, onNextMonth, select
 // ChatScreen — a room switcher (General + department rooms this
 // person has access to) and a simple realtime text chat per room.
 // ============================================================
-function ChatScreen({ currentUser }) {
+// ============================================================
+// OnlineStatusPanel — owner-only view showing who's currently online
+// (checked in within the last 60 seconds) and everyone's last login time.
+// ============================================================
+function OnlineStatusPanel({ onClose }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
+
+  const fetchProfiles = useCallback(async () => {
+    const { data, error } = await supabase.from("profiles").select("*");
+    if (error) console.error("Profiles fetch error:", error);
+    setRows(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchProfiles();
+    // Refresh the profile data every 15s, and re-check the online threshold
+    // every 5s (much cheaper — just re-evaluates timestamps already in hand).
+    const dataInterval = setInterval(fetchProfiles, 15000);
+    const clockInterval = setInterval(() => setNow(Date.now()), 5000);
+    return () => { clearInterval(dataInterval); clearInterval(clockInterval); };
+  }, [fetchProfiles]);
+
+  const ONLINE_WINDOW_MS = 60 * 1000;
+
+  // Join profiles (which only exist for people who've actually signed up)
+  // against the full PEOPLE roster, so someone who hasn't signed up yet
+  // still shows in the list as "Never logged in" rather than being missing.
+  const merged = PEOPLE.map((p) => {
+    const row = rows.find((r) => r.person_id === p.id);
+    const isOnline = row?.last_seen && (now - new Date(row.last_seen).getTime()) < ONLINE_WINDOW_MS;
+    return { ...p, lastLogin: row?.last_login || null, isOnline };
+  }).sort((a, b) => (b.isOnline - a.isOnline) || a.name.localeCompare(b.name));
+
+  function fmtLoginTime(iso) {
+    if (!iso) return "Never logged in";
+    const d = new Date(iso);
+    const diffMs = now - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "Just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50,
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+    }}>
+      <div style={{
+        background: "#fff", width: "100%", maxWidth: 420, maxHeight: "80vh",
+        borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #e8eaed" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#202124" }}>Online status</div>
+          <button onClick={onClose} style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 18, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ overflowY: "auto", padding: "8px 0" }}>
+          {loading ? (
+            <div style={{ fontSize: 13, color: "#70757a", padding: "16px", textAlign: "center" }}>Loading…</div>
+          ) : (
+            merged.map((p) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px" }}>
+                <span style={{
+                  width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
+                  background: p.isOnline ? "#188038" : "#dadce0",
+                }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "#202124" }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: "#70757a" }}>
+                    {p.isOnline ? "Online now" : fmtLoginTime(p.lastLogin)}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChatScreen({ currentUser, isOwner }) {
   const myRooms = roomsFor(currentUser);
   const [activeRoom, setActiveRoom] = useState(myRooms[0]?.id || "general");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showStatusPanel, setShowStatusPanel] = useState(false);
   const scrollRef = useRef(null);
 
   const fetchMessages = useCallback(async (roomId) => {
@@ -2041,7 +2149,36 @@ function ChatScreen({ currentUser }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 220px)", minHeight: 360 }}>
       <div style={{ padding: "8px 16px 0" }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: "#202124", margin: "8px 0 10px" }}>Chat</h2>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: "#202124", margin: "8px 0 10px" }}>Chat</h2>
+          {isOwner && (
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setShowMenu((v) => !v)}
+                aria-label="Chat options"
+                style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 18, cursor: "pointer", padding: 6, lineHeight: 1 }}
+              >
+                ⋮
+              </button>
+              {showMenu && (
+                <div style={{
+                  position: "absolute", right: 0, top: "100%", background: "#fff", border: "1px solid #dadce0",
+                  borderRadius: 8, boxShadow: "0 2px 8px rgba(0,0,0,0.12)", zIndex: 10, minWidth: 160,
+                }}>
+                  <button
+                    onClick={() => { setShowMenu(false); setShowStatusPanel(true); }}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left", padding: "10px 14px",
+                      border: "none", background: "transparent", fontSize: 12.5, color: "#202124", cursor: "pointer",
+                    }}
+                  >
+                    🟢 Online status
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
           {myRooms.map((r) => (
             <button
@@ -2059,6 +2196,10 @@ function ChatScreen({ currentUser }) {
           ))}
         </div>
       </div>
+
+      {showStatusPanel && (
+        <OnlineStatusPanel onClose={() => setShowStatusPanel(false)} />
+      )}
 
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "4px 16px" }}>
         {loading ? (
