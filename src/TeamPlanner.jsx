@@ -20,7 +20,6 @@ const PEOPLE = [
   { id: "moosa", name: "Moosa", role: "member", depts: ["CUET"] },
   { id: "shaheer", name: "Shaheer", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
   { id: "aslam", name: "Aslam", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
-  { id: "mudassir", name: "Mudassir", role: "member", depts: [] },
   { id: "shahasad", name: "Shahasad", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
   { id: "asnah", name: "Asnah", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
   { id: "basith", name: "Basith", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
@@ -91,6 +90,16 @@ function roomsFor(person) {
     (person.depts || []).forEach((d) => rooms.add(d.toLowerCase()));
   }
   return CHAT_ROOMS.filter((r) => rooms.has(r.id));
+}
+
+// Returns the list of DEPARTMENTS entries a person can see in Academics and
+// Analytics. Different rule from chat rooms: owners AND heads see all 4
+// departments (full organizational visibility), while members only see the
+// department(s) they're specifically assigned to via their `depts` list.
+function visibleDeptsFor(person) {
+  if (!person) return [];
+  if (person.role === "owner" || person.role === "head") return DEPARTMENTS;
+  return DEPARTMENTS.filter((d) => (person.depts || []).includes(d.name));
 }
 
 const MEETING_COLOR = "#E37400";
@@ -1598,6 +1607,7 @@ function AnalyticsScreen({ currentUser, isOwner, isHead, showToast }) {
   const [enrollError, setEnrollError] = useState("");
 
   const canManage = isOwner || isHead;
+  const myDepts = visibleDeptsFor(currentUser); // what THIS person is allowed to see here
 
   const fetchAll = useCallback(async () => {
     const [entriesRes, snapshotsRes, facultyRes] = await Promise.all([
@@ -1625,14 +1635,20 @@ function AnalyticsScreen({ currentUser, isOwner, isHead, showToast }) {
     return () => { supabase.removeChannel(channel); };
   }, [fetchAll]);
 
-  // ---- KPI row ----
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter((t) => t.status === "completed").length;
+  // ---- KPI row (scoped to visible departments only) ----
+  const myDeptNames = myDepts.map((d) => d.name);
+  const scopedTasks = tasks.filter((t) => {
+    const h = HEADS.find((x) => x.id === t.head);
+    return h && myDeptNames.includes(h.programme);
+  });
+  const scopedFaculty = facultyList.filter((f) => myDeptNames.includes(f.department));
+  const totalTasks = scopedTasks.length;
+  const completedTasks = scopedTasks.filter((t) => t.status === "completed").length;
   const overallRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  const totalFaculty = facultyList.length;
+  const totalFaculty = scopedFaculty.length;
 
-  // ---- Department task completion (bar) ----
-  const deptStats = DEPARTMENTS.map((d) => {
+  // ---- Department task completion (bar) — only their visible departments ----
+  const deptStats = myDepts.map((d) => {
     const deptTasks = tasks.filter((t) => {
       const h = HEADS.find((x) => x.id === t.head);
       return h && h.programme === d.name;
@@ -1645,14 +1661,15 @@ function AnalyticsScreen({ currentUser, isOwner, isHead, showToast }) {
   // ---- Enrollment trend (line-ish, latest per department) ----
   const latestByDept = {};
   for (const s of snapshots) {
+    if (!myDeptNames.includes(s.department)) continue; // only their visible departments
     if (!latestByDept[s.department] || s.recorded_date > latestByDept[s.department].recorded_date) {
       latestByDept[s.department] = s;
     }
   }
   const totalStudents = Object.values(latestByDept).reduce((sum, s) => sum + (s.student_count || 0), 0);
 
-  // ---- Faculty per department (bar) ----
-  const facultyByDept = DEPARTMENTS.map((d) => ({
+  // ---- Faculty per department (bar) — only their visible departments ----
+  const facultyByDept = myDepts.map((d) => ({
     ...d,
     count: facultyList.filter((f) => f.department === d.name).length,
   }));
@@ -1696,7 +1713,7 @@ function AnalyticsScreen({ currentUser, isOwner, isHead, showToast }) {
         <SummaryStat label="Students" value={totalStudents} color="#202124" />
         <SummaryStat label="Task rate" value={`${overallRate}%`} color="#188038" />
         <SummaryStat label="Faculty" value={totalFaculty} color="#1a73e8" />
-        <SummaryStat label="Depts" value={DEPARTMENTS.length} color="#8430CE" />
+        <SummaryStat label="Depts" value={myDepts.length} color="#8430CE" />
       </div>
 
       {/* Section 1: Department Performance */}
@@ -1750,7 +1767,7 @@ function AnalyticsScreen({ currentUser, isOwner, isHead, showToast }) {
         <div style={{ fontSize: 12.5, color: "#70757a", padding: "8px 0" }}>No enrollment data recorded yet.</div>
       ) : (
         <BarChartBlock
-          data={DEPARTMENTS.map((d) => ({
+          data={myDepts.map((d) => ({
             label: d.name,
             value: latestByDept[d.name]?.student_count || 0,
             color: d.color,
@@ -1761,7 +1778,7 @@ function AnalyticsScreen({ currentUser, isOwner, isHead, showToast }) {
       )}
 
       {snapshots.length > 0 && (
-        <EnrollmentTrendLine snapshots={snapshots} />
+        <EnrollmentTrendLine snapshots={snapshots} depts={myDepts} />
       )}
 
       {/* Section 3: Faculty Overview */}
@@ -1810,12 +1827,15 @@ function BarChartBlock({ data, maxValue }) {
 // Lightweight SVG line chart showing enrollment over time, one line per
 // department, using plain SVG (no chart library) since the data volume is
 // small and this avoids adding a dependency for a handful of points.
-function EnrollmentTrendLine({ snapshots }) {
+function EnrollmentTrendLine({ snapshots, depts }) {
   const width = 300;
   const height = 120;
   const padding = 24;
 
-  const dates = [...new Set(snapshots.map((s) => s.recorded_date))].sort();
+  const deptNames = depts.map((d) => d.name);
+  const scopedSnapshots = snapshots.filter((s) => deptNames.includes(s.department));
+
+  const dates = [...new Set(scopedSnapshots.map((s) => s.recorded_date))].sort();
   if (dates.length < 2) {
     return (
       <div style={{ fontSize: 11.5, color: "#70757a", marginTop: 10 }}>
@@ -1824,7 +1844,7 @@ function EnrollmentTrendLine({ snapshots }) {
     );
   }
 
-  const maxCount = Math.max(1, ...snapshots.map((s) => s.student_count));
+  const maxCount = Math.max(1, ...scopedSnapshots.map((s) => s.student_count));
   const xFor = (date) => {
     const idx = dates.indexOf(date);
     return padding + (idx / (dates.length - 1)) * (width - padding * 2);
@@ -1835,8 +1855,8 @@ function EnrollmentTrendLine({ snapshots }) {
     <div style={{ marginTop: 12 }}>
       <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto" }}>
         <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#dadce0" strokeWidth="1" />
-        {DEPARTMENTS.map((d) => {
-          const points = snapshots
+        {depts.map((d) => {
+          const points = scopedSnapshots
             .filter((s) => s.department === d.name)
             .sort((a, b) => a.recorded_date.localeCompare(b.recorded_date));
           if (points.length < 2) return null;
@@ -1852,7 +1872,7 @@ function EnrollmentTrendLine({ snapshots }) {
         })}
       </svg>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
-        {DEPARTMENTS.map((d) => (
+        {depts.map((d) => (
           <span key={d.name} style={{ fontSize: 10, color: "#5f6368", display: "flex", alignItems: "center", gap: 3 }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: d.color, display: "inline-block" }} />
             {d.name}
@@ -2408,6 +2428,11 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
     return false;
   }
 
+  // What this person is even allowed to SEE here — owners/heads see all 4,
+  // members see only their assigned department(s).
+  const myDepts = visibleDeptsFor(currentUser);
+  const myDeptNames = myDepts.map((d) => d.name);
+
   const fetchAll = useCallback(async () => {
     const [classesRes, facultyRes] = await Promise.all([
       supabase.from("class_sessions").select("*").order("class_date", { ascending: true }),
@@ -2437,7 +2462,12 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
     }
   }, [isHead, myDept]);
 
-  const filteredClasses = classes.filter((c) => {
+  // Scoped down to only what this person can see — everything below reads
+  // from these, never the raw `classes`/`facultyList` state directly.
+  const visibleClasses = classes.filter((c) => myDeptNames.includes(c.department));
+  const visibleFaculty = facultyList.filter((f) => myDeptNames.includes(f.department));
+
+  const filteredClasses = visibleClasses.filter((c) => {
     if (deptFilter !== "all" && c.department !== deptFilter) return false;
     if (statusFilter !== "all" && c.status !== statusFilter) return false;
     return true;
@@ -2449,12 +2479,13 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
   const facultyForClassDept = facultyList.filter((f) => f.department === classDept);
 
   // Instructor performance: completion rate = completed sessions / total
-  // sessions scheduled for them, ranked highest-first, within each department.
-  const performanceByDept = DEPARTMENTS.map((d) => {
-    const deptFaculty = facultyList.filter((f) => f.department === d.name);
+  // sessions scheduled for them, ranked highest-first, within each department
+  // this person can see.
+  const performanceByDept = myDepts.map((d) => {
+    const deptFaculty = visibleFaculty.filter((f) => f.department === d.name);
     const ranked = deptFaculty
       .map((f) => {
-        const theirClasses = classes.filter((c) => c.faculty_id === f.id);
+        const theirClasses = visibleClasses.filter((c) => c.faculty_id === f.id);
         const completed = theirClasses.filter((c) => c.status === "completed").length;
         const rate = theirClasses.length > 0 ? Math.round((completed / theirClasses.length) * 100) : null;
         return { ...f, total: theirClasses.length, completed, rate };
@@ -2598,7 +2629,7 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
         </button>
       </div>
 
-      {classes.length > 0 && (
+      {visibleClasses.length > 0 && (
         <button
           onClick={() => setShowFilters((v) => !v)}
           style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 11.5, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: showFilters ? 8 : 12, display: "flex", alignItems: "center", gap: 4 }}
@@ -2607,11 +2638,11 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
         </button>
       )}
 
-      {showFilters && classes.length > 0 && (
+      {showFilters && visibleClasses.length > 0 && (
         <>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
             <FilterChip label="All depts" active={deptFilter === "all"} color="#5f6368" bg="#f1f3f4" onClick={() => setDeptFilter("all")} />
-            {DEPARTMENTS.map((d) => (
+            {myDepts.map((d) => (
               <FilterChip key={d.name} label={d.name} active={deptFilter === d.name} color={d.color} bg={d.bg} onClick={() => setDeptFilter(d.name)} />
             ))}
           </div>
@@ -2863,12 +2894,12 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
         </div>
       )}
 
-      {facultyList.length === 0 ? (
+      {visibleFaculty.length === 0 ? (
         <div style={{ fontSize: 12.5, color: "#70757a", padding: "8px 0 16px" }}>No faculty added yet.</div>
       ) : (
         <div style={{ marginBottom: 20 }}>
-          {DEPARTMENTS.map((d) => {
-            const deptFaculty = facultyList.filter((f) => f.department === d.name);
+          {myDepts.map((d) => {
+            const deptFaculty = visibleFaculty.filter((f) => f.department === d.name);
             if (deptFaculty.length === 0) return null;
             return (
               <div key={d.name} style={{ marginBottom: 12 }}>
