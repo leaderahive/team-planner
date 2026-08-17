@@ -18,7 +18,7 @@ const PEOPLE = [
   { id: "jazeem", name: "Jazeem", role: "member", depts: ["CUET"] },
   { id: "rinsha", name: "Rinsha", role: "member", depts: ["Legal"] },
   { id: "moosa", name: "Moosa", role: "member", depts: ["CUET"] },
-  { id: "shaheer", name: "Shaheer", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
+  { id: "shaheer", name: "Shaheer", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"], actsAsOwner: true },
   { id: "aslam", name: "Aslam", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
   { id: "shahasad", name: "Shahasad", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
   { id: "asnah", name: "Asnah", role: "member", depts: ["CUET", "Hive", "Legal", "Leadgen"] },
@@ -200,7 +200,12 @@ export default function TeamPlanner() {
   const [authLoaded, setAuthLoaded] = useState(false);
   const currentUserId = profile?.person_id || "";
   const currentUser = personById(currentUserId);
-  const isOwner = currentUser?.role === "owner";
+  // isOwner drives PERMISSIONS (what someone can edit/manage) everywhere in
+  // the app. Shaheer has `actsAsOwner: true` — full owner-level edit rights —
+  // while still keeping role: "member" for all DISPLAY purposes (login list,
+  // legend, "Owner access" gating), which read `role` directly and are
+  // intentionally untouched by this.
+  const isOwner = currentUser?.role === "owner" || currentUser?.actsAsOwner === true;
   const isHead = currentUser?.role === "head";
   const isMember = currentUser?.role === "member";
   const canManageOwn = isOwner || isHead; // can add/edit/delete their own entries
