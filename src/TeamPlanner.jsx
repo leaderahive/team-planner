@@ -338,7 +338,57 @@ export default function TeamPlanner() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [activeScreen, setActiveScreen] = useState("planner"); // "planner" | "analytics" | "academics"
+  const [activeScreen, setActiveScreen] = useState("planner"); // "planner" | "analytics" | "academics" | "chat"
+  const [unreadByRoom, setUnreadByRoom] = useState({}); // { roomId: count }
+
+  const fetchUnreadCounts = useCallback(async () => {
+    if (!currentUserId) { setUnreadByRoom({}); return; }
+    const myRoomIds = roomsFor(currentUser).map((r) => r.id);
+    if (myRoomIds.length === 0) { setUnreadByRoom({}); return; }
+
+    const { data: readStates, error: readError } = await supabase
+      .from("chat_read_state")
+      .select("room, last_read_at")
+      .eq("person_id", currentUserId);
+    if (readError) { console.error("Read-state fetch error:", readError); return; }
+    const lastReadByRoom = {};
+    for (const r of readStates || []) lastReadByRoom[r.room] = r.last_read_at;
+
+    const counts = {};
+    await Promise.all(myRoomIds.map(async (roomId) => {
+      const lastRead = lastReadByRoom[roomId];
+      let query = supabase.from("chat_messages").select("id", { count: "exact", head: true }).eq("room", roomId);
+      if (lastRead) query = query.gt("created_at", lastRead);
+      const { count, error } = await query;
+      if (error) { console.error(`Unread count error for ${roomId}:`, error); return; }
+      counts[roomId] = count || 0;
+    }));
+    setUnreadByRoom(counts);
+  }, [currentUserId, currentUser]);
+
+  useEffect(() => {
+    fetchUnreadCounts();
+    if (!currentUserId) return;
+    // Any new message in any room this person can access should refresh the
+    // counts live — cheaper to just re-fetch counts than track every message.
+    const channel = supabase
+      .channel("unread-tracker")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, fetchUnreadCounts)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchUnreadCounts, currentUserId]);
+
+  const totalUnread = Object.values(unreadByRoom).reduce((sum, n) => sum + n, 0);
+
+  async function markRoomRead(roomId) {
+    if (!currentUserId) return;
+    const { error } = await supabase
+      .from("chat_read_state")
+      .upsert({ person_id: currentUserId, room: roomId, last_read_at: new Date().toISOString() }, { onConflict: "person_id,room" });
+    if (error) { console.error("Mark read error:", error); return; }
+    setUnreadByRoom((prev) => ({ ...prev, [roomId]: 0 }));
+  }
+
   const [viewMode, setViewMode] = useState("calendar"); // "calendar" | "list"
   const [activeFilters, setActiveFilters] = useState(() => new Set());
   const [toast, setToast] = useState(null);
@@ -935,12 +985,29 @@ export default function TeamPlanner() {
           alt="Leadera logo"
           style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0 }}
         />
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Leadera Family</h1>
           <p style={{ fontSize: 13, color: "#5f6368", margin: "2px 0 0" }}>
             Everyone's tasks and meetings, one place
           </p>
         </div>
+        <button
+          onClick={() => setActiveScreen("chat")}
+          aria-label="Notifications"
+          style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 8, flexShrink: 0 }}
+        >
+          <span style={{ fontSize: 20 }}>🔔</span>
+          {totalUnread > 0 && (
+            <span style={{
+              position: "absolute", top: 2, right: 2, background: "#C5221F", color: "#fff",
+              fontSize: 9.5, fontWeight: 700, minWidth: 15, height: 15, borderRadius: 999,
+              display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px",
+              border: "1.5px solid #fff",
+            }}>
+              {totalUnread > 99 ? "99+" : totalUnread}
+            </span>
+          )}
+        </button>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px 10px" }}>
@@ -1440,7 +1507,7 @@ export default function TeamPlanner() {
       )}
 
       {activeScreen === "chat" && (
-        <ChatScreen currentUser={currentUser} isOwner={isOwner} />
+        <ChatScreen currentUser={currentUser} isOwner={isOwner} unreadByRoom={unreadByRoom} markRoomRead={markRoomRead} />
       )}
 
       {toast && (
@@ -1990,11 +2057,21 @@ function OnlineStatusPanel({ onClose }) {
   // Join profiles (which only exist for people who've actually signed up)
   // against the full PEOPLE roster, so someone who hasn't signed up yet
   // still shows in the list as "Never logged in" rather than being missing.
+  // Three states: online now (green), recent/offline but has logged in before
+  // (amber, shows last-seen time), never logged in at all (gray).
   const merged = PEOPLE.map((p) => {
     const row = rows.find((r) => r.person_id === p.id);
     const isOnline = row?.last_seen && (now - new Date(row.last_seen).getTime()) < ONLINE_WINDOW_MS;
-    return { ...p, lastLogin: row?.last_login || null, isOnline };
-  }).sort((a, b) => (b.isOnline - a.isOnline) || a.name.localeCompare(b.name));
+    const hasEverLoggedIn = !!(row?.last_login || row?.last_seen);
+    const status = isOnline ? "online" : hasEverLoggedIn ? "recent" : "never";
+    // Prefer last_seen for "how recently active" (updates every 30s while open),
+    // fall back to last_login if last_seen is somehow missing.
+    const lastActivity = row?.last_seen || row?.last_login || null;
+    return { ...p, lastActivity, status };
+  }).sort((a, b) => {
+    const order = { online: 0, recent: 1, never: 2 };
+    return order[a.status] - order[b.status] || a.name.localeCompare(b.name);
+  });
 
   function fmtLoginTime(iso) {
     if (!iso) return "Never logged in";
@@ -2007,6 +2084,9 @@ function OnlineStatusPanel({ onClose }) {
     if (diffHr < 24) return `${diffHr}h ago`;
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   }
+
+  const statusDotColor = { online: "#188038", recent: "#E8A317", never: "#dadce0" };
+  const statusLabel = { online: "Online now", recent: null, never: "Never logged in" }; // "recent" uses fmtLoginTime instead
 
   return (
     <div style={{
@@ -2029,12 +2109,12 @@ function OnlineStatusPanel({ onClose }) {
               <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px" }}>
                 <span style={{
                   width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
-                  background: p.isOnline ? "#188038" : "#dadce0",
+                  background: statusDotColor[p.status],
                 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: "#202124" }}>{p.name}</div>
                   <div style={{ fontSize: 11, color: "#70757a" }}>
-                    {p.isOnline ? "Online now" : fmtLoginTime(p.lastLogin)}
+                    {statusLabel[p.status] || fmtLoginTime(p.lastActivity)}
                   </div>
                 </div>
               </div>
@@ -2046,7 +2126,7 @@ function OnlineStatusPanel({ onClose }) {
   );
 }
 
-function ChatScreen({ currentUser, isOwner }) {
+function ChatScreen({ currentUser, isOwner, unreadByRoom, markRoomRead }) {
   const myRooms = roomsFor(currentUser);
   const [activeRoom, setActiveRoom] = useState(myRooms[0]?.id || "general");
   const [messages, setMessages] = useState([]);
@@ -2072,16 +2152,22 @@ function ChatScreen({ currentUser, isOwner }) {
 
   useEffect(() => {
     fetchMessages(activeRoom);
+    markRoomRead(activeRoom); // opening a room (including on initial load) clears its unread badge
     const channel = supabase
       .channel(`chat-${activeRoom}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `room=eq.${activeRoom}` }, (payload) => {
         setMessages((prev) => [...prev, payload.new]);
+        markRoomRead(activeRoom); // person is actively looking at this room, so it's read as it arrives
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "chat_messages", filter: `room=eq.${activeRoom}` }, (payload) => {
         setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
+    // markRoomRead intentionally omitted from deps: it's a plain (non-memoized)
+    // function from the parent, and including it would re-subscribe on every
+    // parent render for no reason — we only want this effect to re-run when
+    // the room itself changes.
   }, [activeRoom, fetchMessages]);
 
   useEffect(() => {
@@ -2180,20 +2266,34 @@ function ChatScreen({ currentUser, isOwner }) {
           )}
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-          {myRooms.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => setActiveRoom(r.id)}
-              style={{
-                border: activeRoom === r.id ? `2px solid ${r.color}` : "1px solid #dadce0",
-                background: activeRoom === r.id ? r.bg : "#fff",
-                color: activeRoom === r.id ? r.color : "#5f6368",
-                fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 999, cursor: "pointer",
-              }}
-            >
-              {r.name}
-            </button>
-          ))}
+          {myRooms.map((r) => {
+            const unread = unreadByRoom[r.id] || 0;
+            return (
+              <button
+                key={r.id}
+                onClick={() => setActiveRoom(r.id)}
+                style={{
+                  position: "relative",
+                  border: activeRoom === r.id ? `2px solid ${r.color}` : "1px solid #dadce0",
+                  background: activeRoom === r.id ? r.bg : "#fff",
+                  color: activeRoom === r.id ? r.color : "#5f6368",
+                  fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 999, cursor: "pointer",
+                }}
+              >
+                {r.name}
+                {unread > 0 && r.id !== activeRoom && (
+                  <span style={{
+                    position: "absolute", top: -5, right: -5, background: "#C5221F", color: "#fff",
+                    fontSize: 9, fontWeight: 700, minWidth: 15, height: 15, borderRadius: 999,
+                    display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px",
+                    border: "1.5px solid #fff",
+                  }}>
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
