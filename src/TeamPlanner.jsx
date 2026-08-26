@@ -1140,8 +1140,8 @@ export default function TeamPlanner() {
         )}
       </div>
 
-      <div style={{ padding: "0 16px 10px", position: "relative" }}>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+      <div style={{ padding: "0 16px 6px", position: "relative" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
           <button
             onClick={() => setShowFilterPanel((v) => !v)}
             style={{
