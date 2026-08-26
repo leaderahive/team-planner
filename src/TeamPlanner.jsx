@@ -1140,29 +1140,53 @@ export default function TeamPlanner() {
         )}
       </div>
 
-      <div style={{ padding: "0 16px 6px", position: "relative" }}>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+      <div style={{ padding: "0 16px 10px", position: "relative" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <button
             onClick={() => setShowFilterPanel((v) => !v)}
             style={{
-              display: "flex", alignItems: "center", gap: 5,
+              display: "flex", alignItems: "center", gap: 4, flexShrink: 0,
               border: activeFilters.size > 0 ? "1.5px solid #1a73e8" : "1px solid #dadce0",
               background: activeFilters.size > 0 ? "#E8F0FE" : "#fff",
               color: activeFilters.size > 0 ? "#1a73e8" : "#5f6368",
-              fontSize: 12.5, fontWeight: 600, padding: "6px 12px", borderRadius: 999, cursor: "pointer",
+              fontSize: 12, fontWeight: 600, padding: "7px 10px", borderRadius: 8, cursor: "pointer",
             }}
           >
             ⚲ Filter{activeFilters.size > 0 ? ` (${activeFilters.size})` : ""} {showFilterPanel ? "▲" : "▼"}
           </button>
-          {activeFilters.size > 0 && (
-            <button
-              onClick={() => setActiveFilters(new Set())}
-              style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 11.5, cursor: "pointer", padding: "4px 6px" }}
-            >
-              Clear
-            </button>
-          )}
+
+          <button
+            onClick={() => setViewMode("calendar")}
+            style={{
+              flex: 1, padding: "7px 0", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              border: viewMode === "calendar" ? "2px solid #1a73e8" : "1px solid #dadce0",
+              background: viewMode === "calendar" ? "#E8F0FE" : "#fff",
+              color: viewMode === "calendar" ? "#1a73e8" : "#5f6368",
+            }}
+          >
+            📅 Calendar
+          </button>
+          <button
+            onClick={() => setViewMode("list")}
+            style={{
+              flex: 1, padding: "7px 0", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              border: viewMode === "list" ? "2px solid #1a73e8" : "1px solid #dadce0",
+              background: viewMode === "list" ? "#E8F0FE" : "#fff",
+              color: viewMode === "list" ? "#1a73e8" : "#5f6368",
+            }}
+          >
+            ☰ List
+          </button>
         </div>
+
+        {activeFilters.size > 0 && (
+          <button
+            onClick={() => setActiveFilters(new Set())}
+            style={{ border: "none", background: "transparent", color: "#5f6368", fontSize: 11.5, cursor: "pointer", padding: "6px 0 0" }}
+          >
+            Clear filter
+          </button>
+        )}
 
         {showFilterPanel && (
           <>
@@ -1187,31 +1211,6 @@ export default function TeamPlanner() {
             </div>
           </>
         )}
-
-        <div style={{ display: "flex", gap: 6 }}>
-          <button
-            onClick={() => setViewMode("calendar")}
-            style={{
-              flex: 1, padding: "7px 0", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-              border: viewMode === "calendar" ? "2px solid #1a73e8" : "1px solid #dadce0",
-              background: viewMode === "calendar" ? "#E8F0FE" : "#fff",
-              color: viewMode === "calendar" ? "#1a73e8" : "#5f6368",
-            }}
-          >
-            📅 Calendar
-          </button>
-          <button
-            onClick={() => setViewMode("list")}
-            style={{
-              flex: 1, padding: "7px 0", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-              border: viewMode === "list" ? "2px solid #1a73e8" : "1px solid #dadce0",
-              background: viewMode === "list" ? "#E8F0FE" : "#fff",
-              color: viewMode === "list" ? "#1a73e8" : "#5f6368",
-            }}
-          >
-            ☰ List
-          </button>
-        </div>
       </div>
 
       {viewMode === "calendar" ? (
