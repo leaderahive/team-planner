@@ -706,12 +706,34 @@ export default function TeamPlanner() {
   // An entry passes if it matches ANY active filter chip (OR logic) — e.g. selecting
   // "Sabeeh" and "Meetings" shows Sabeeh's tasks plus all meetings, not just their overlap.
   // With no filters active, everything shows (the normal, unfiltered view).
+  // Stat-card filters ("status-completed" etc.) are exclusive by convention —
+  // tapping one clears any other active filters first (see toggleStatFilter).
   function matchesFilters(e) {
     if (activeFilters.size === 0) return true;
+    if (activeFilters.has("status-completed")) return e.type === "task" && e.status === "completed";
+    if (activeFilters.has("status-in_progress")) return e.type === "task" && e.status === "in_progress";
+    if (activeFilters.has("status-overdue")) {
+      if (e.type !== "task" || !e.dueDate) return false;
+      if (e.status === "completed" || e.status === "cancelled") return false;
+      return e.dueDate < todayKey;
+    }
     if (activeFilters.has("mine") && currentUser && e.type === "task" && e.assignee === currentUser.name) return true;
     if (activeFilters.has(e.type) && (e.type === "meeting" || e.type === "event")) return true;
     if (e.type === "task" && e.head && activeFilters.has(e.head)) return true;
     return false;
+  }
+
+  // Stat cards act as exclusive shortcuts: tapping one clears whatever else
+  // was active, shows just that slice, AND switches to List view — a filtered
+  // stat like "Overdue" reads as a clean list, not scattered dots on a
+  // calendar grid. Tapping the same card again clears the filter and
+  // returns to Calendar view.
+  function toggleStatFilter(key) {
+    setActiveFilters((prev) => {
+      const clearing = prev.has(key) && prev.size === 1;
+      setViewMode(clearing ? "calendar" : "list");
+      return clearing ? new Set() : new Set([key]);
+    });
   }
 
   const filteredEntries = entries.filter(matchesFilters);
@@ -1054,11 +1076,19 @@ export default function TeamPlanner() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, padding: "0 16px 14px" }}>
-        <SummaryStat label="Total" value={totalTasks} color="#202124" />
-        <SummaryStat label="Completed" value={completedTasks} color="#188038" />
-        <SummaryStat label="In progress" value={inProgressTasks} color="#B06000" />
-        <SummaryStat label="Overdue" value={overdueTasks} color="#C5221F" />
+        <SummaryStat label="Total" value={totalTasks} color="#202124" onClick={() => { setActiveFilters(new Set()); setViewMode("calendar"); }} active={activeFilters.size === 0} />
+        <SummaryStat label="Completed" value={completedTasks} color="#188038" onClick={() => toggleStatFilter("status-completed")} active={activeFilters.has("status-completed")} />
+        <SummaryStat label="In progress" value={inProgressTasks} color="#B06000" onClick={() => toggleStatFilter("status-in_progress")} active={activeFilters.has("status-in_progress")} />
+        <SummaryStat label="Overdue" value={overdueTasks} color="#C5221F" onClick={() => toggleStatFilter("status-overdue")} active={activeFilters.has("status-overdue")} />
       </div>
+      {activeFilters.has("status-completed") || activeFilters.has("status-in_progress") || activeFilters.has("status-overdue") ? (
+        <div style={{ padding: "0 16px 10px", fontSize: 11.5, color: "#5f6368" }}>
+          Showing {activeFilters.has("status-completed") ? "completed" : activeFilters.has("status-in_progress") ? "in-progress" : "overdue"} tasks only —{" "}
+          <button onClick={() => { setActiveFilters(new Set()); setViewMode("calendar"); }} style={{ border: "none", background: "transparent", color: "#1a73e8", fontWeight: 600, cursor: "pointer", padding: 0, fontSize: 11.5 }}>
+            clear
+          </button>
+        </div>
+      ) : null}
 
       <div style={{ padding: "0 16px 14px" }}>
         <button
@@ -1566,12 +1596,23 @@ export default function TeamPlanner() {
   );
 }
 
-function SummaryStat({ label, value, color }) {
+function SummaryStat({ label, value, color, onClick, active }) {
+  const clickable = typeof onClick === "function";
+  const Tag = clickable ? "button" : "div";
   return (
-    <div style={{ background: "#f8f9fa", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}>
+    <Tag
+      onClick={onClick}
+      style={{
+        background: active ? "#E8F0FE" : "#f8f9fa",
+        border: active ? "1.5px solid #1a73e8" : "1.5px solid transparent",
+        borderRadius: 10, padding: "8px 6px", textAlign: "center",
+        cursor: clickable ? "pointer" : "default",
+        width: "100%", fontFamily: "inherit",
+      }}
+    >
       <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
       <div style={{ fontSize: 10, color: "#70757a", marginTop: 1 }}>{label}</div>
-    </div>
+    </Tag>
   );
 }
 
