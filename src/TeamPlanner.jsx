@@ -1019,48 +1019,53 @@ export default function TeamPlanner() {
 
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", maxWidth: 420, margin: "0 auto", paddingBottom: 150 }}>
-      <div style={{ padding: "16px 16px 8px", display: "flex", alignItems: "center", gap: 10 }}>
-        <img
-          src={LOGO_SRC}
-          alt="Leadera logo"
-          style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0 }}
-        />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Leadera Family</h1>
-          <p style={{ fontSize: 13, color: "#5f6368", margin: "2px 0 0" }}>
-            Everyone's tasks and meetings, one place
-          </p>
+      <div style={{
+        position: "sticky", top: 0, zIndex: 15, background: "#fff",
+        borderBottom: "1px solid #e8eaed", boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+      }}>
+        <div style={{ padding: "16px 16px 8px", display: "flex", alignItems: "center", gap: 10 }}>
+          <img
+            src={LOGO_SRC}
+            alt="Leadera logo"
+            style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0 }}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0, color: "#202124" }}>Leadera Family</h1>
+            <p style={{ fontSize: 13, color: "#5f6368", margin: "2px 0 0" }}>
+              Everyone's tasks and meetings, one place
+            </p>
+          </div>
+          <button
+            onClick={() => setActiveScreen("chat")}
+            aria-label="Notifications"
+            style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 8, flexShrink: 0 }}
+          >
+            <span style={{ fontSize: 20 }}>🔔</span>
+            {totalUnread > 0 && (
+              <span style={{
+                position: "absolute", top: 2, right: 2, background: "#C5221F", color: "#fff",
+                fontSize: 9.5, fontWeight: 700, minWidth: 15, height: 15, borderRadius: 999,
+                display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px",
+                border: "1.5px solid #fff",
+              }}>
+                {totalUnread > 99 ? "99+" : totalUnread}
+              </span>
+            )}
+          </button>
         </div>
-        <button
-          onClick={() => setActiveScreen("chat")}
-          aria-label="Notifications"
-          style={{ position: "relative", border: "none", background: "transparent", cursor: "pointer", padding: 8, flexShrink: 0 }}
-        >
-          <span style={{ fontSize: 20 }}>🔔</span>
-          {totalUnread > 0 && (
-            <span style={{
-              position: "absolute", top: 2, right: 2, background: "#C5221F", color: "#fff",
-              fontSize: 9.5, fontWeight: 700, minWidth: 15, height: 15, borderRadius: 999,
-              display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px",
-              border: "1.5px solid #fff",
-            }}>
-              {totalUnread > 99 ? "99+" : totalUnread}
-            </span>
-          )}
-        </button>
-      </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px 10px" }}>
-        <span style={{ fontSize: 12, color: "#70757a" }}>
-          Signed in as <strong style={{ color: "#202124", fontWeight: 600 }}>{currentUser.name}</strong>
-          {isOwner ? ` · ${currentUser.title}` : isHead ? ` · ${currentUser.programme}` : ""}
-        </span>
-        <button
-          onClick={logOut}
-          style={{ border: "none", background: "transparent", color: "#1a73e8", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
-        >
-          Log out
-        </button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px 10px" }}>
+          <span style={{ fontSize: 12, color: "#70757a" }}>
+            Signed in as <strong style={{ color: "#202124", fontWeight: 600 }}>{currentUser.name}</strong>
+            {isOwner ? ` · ${currentUser.title}` : isHead ? ` · ${currentUser.programme}` : ""}
+          </span>
+          <button
+            onClick={logOut}
+            style={{ border: "none", background: "transparent", color: "#1a73e8", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
+          >
+            Log out
+          </button>
+        </div>
       </div>
 
       {activeScreen === "planner" && (
