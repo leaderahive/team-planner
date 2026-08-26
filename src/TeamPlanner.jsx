@@ -1119,11 +1119,16 @@ export default function TeamPlanner() {
               onClick={() => setShowLeaderboard(false)}
               style={{ position: "fixed", inset: 0, zIndex: 19 }}
             />
+            {/* Fixed (not absolute) so it anchors to the VIEWPORT just below
+                the sticky header, regardless of scroll position — an
+                absolutely-positioned panel would instead anchor to its
+                position in the full page document, which drifts out of
+                view/overlaps the sticky header once the page is scrolled. */}
             <div style={{
-              position: "absolute", top: "100%", left: 16, marginTop: 4,
-              width: "calc(100% - 32px)", maxHeight: 320, overflowY: "auto",
+              position: "fixed", top: 96, left: "50%", transform: "translateX(-50%)",
+              width: "min(388px, calc(100% - 32px))", maxHeight: "60vh", overflowY: "auto",
               border: "1px solid #dadce0", borderRadius: 10, overflow: "hidden",
-              background: "#fff", boxShadow: "0 2px 10px rgba(0,0,0,0.12)", zIndex: 20,
+              background: "#fff", boxShadow: "0 4px 16px rgba(0,0,0,0.16)", zIndex: 20,
             }}>
               {leaderboard.length === 0 ? (
                 <div style={{ padding: "12px 14px", fontSize: 12.5, color: "#70757a" }}>
@@ -1214,11 +1219,14 @@ export default function TeamPlanner() {
               onClick={() => setShowFilterPanel(false)}
               style={{ position: "fixed", inset: 0, zIndex: 19 }}
             />
+            {/* Fixed (not absolute) so it anchors to the VIEWPORT just below
+                the sticky header, regardless of scroll position — same fix
+                as the leaderboard panel, for the same reason. */}
             <div style={{
-              position: "absolute", top: "100%", left: 16, marginTop: 4,
-              display: "flex", flexWrap: "wrap", gap: 6, width: "calc(100% - 32px)",
+              position: "fixed", top: 96, left: "50%", transform: "translateX(-50%)",
+              display: "flex", flexWrap: "wrap", gap: 6, width: "min(388px, calc(100% - 32px))",
               background: "#fff", border: "1px solid #dadce0", borderRadius: 10, padding: 10,
-              boxShadow: "0 2px 10px rgba(0,0,0,0.12)", zIndex: 20,
+              boxShadow: "0 4px 16px rgba(0,0,0,0.16)", zIndex: 20,
             }}>
               <FilterChip label="My tasks" active={activeFilters.has("mine")} color="#1a73e8" bg="#E8F0FE" onClick={() => { toggleFilter("mine"); setShowFilterPanel(false); }} />
               {HEADS.map((h) => (
