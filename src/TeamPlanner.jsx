@@ -405,6 +405,7 @@ export default function TeamPlanner() {
 
   const [viewMode, setViewMode] = useState("calendar"); // "calendar" | "list"
   const [activeFilters, setActiveFilters] = useState(() => new Set());
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
 
@@ -1140,13 +1141,19 @@ export default function TeamPlanner() {
       </div>
 
       <div style={{ padding: "0 16px 10px" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-          <FilterChip label="My tasks" active={activeFilters.has("mine")} color="#1a73e8" bg="#E8F0FE" onClick={() => toggleFilter("mine")} />
-          {HEADS.map((h) => (
-            <FilterChip key={h.id} label={h.name} active={activeFilters.has(h.id)} color={h.color} bg={h.bg} onClick={() => toggleFilter(h.id)} />
-          ))}
-          <FilterChip label="Meetings" active={activeFilters.has("meeting")} color={MEETING_COLOR} bg={MEETING_BG} onClick={() => toggleFilter("meeting")} />
-          <FilterChip label="Events" active={activeFilters.has("event")} color={EVENT_COLOR} bg={EVENT_BG} onClick={() => toggleFilter("event")} />
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: showFilterPanel ? 8 : 10 }}>
+          <button
+            onClick={() => setShowFilterPanel((v) => !v)}
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              border: activeFilters.size > 0 ? "1.5px solid #1a73e8" : "1px solid #dadce0",
+              background: activeFilters.size > 0 ? "#E8F0FE" : "#fff",
+              color: activeFilters.size > 0 ? "#1a73e8" : "#5f6368",
+              fontSize: 12.5, fontWeight: 600, padding: "6px 12px", borderRadius: 999, cursor: "pointer",
+            }}
+          >
+            ⚲ Filter{activeFilters.size > 0 ? ` (${activeFilters.size})` : ""} {showFilterPanel ? "▲" : "▼"}
+          </button>
           {activeFilters.size > 0 && (
             <button
               onClick={() => setActiveFilters(new Set())}
@@ -1156,6 +1163,20 @@ export default function TeamPlanner() {
             </button>
           )}
         </div>
+
+        {showFilterPanel && (
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10,
+            background: "#f8f9fa", borderRadius: 10, padding: 10,
+          }}>
+            <FilterChip label="My tasks" active={activeFilters.has("mine")} color="#1a73e8" bg="#E8F0FE" onClick={() => toggleFilter("mine")} />
+            {HEADS.map((h) => (
+              <FilterChip key={h.id} label={h.name} active={activeFilters.has(h.id)} color={h.color} bg={h.bg} onClick={() => toggleFilter(h.id)} />
+            ))}
+            <FilterChip label="Meetings" active={activeFilters.has("meeting")} color={MEETING_COLOR} bg={MEETING_BG} onClick={() => toggleFilter("meeting")} />
+            <FilterChip label="Events" active={activeFilters.has("event")} color={EVENT_COLOR} bg={EVENT_BG} onClick={() => toggleFilter("event")} />
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 6 }}>
           <button
