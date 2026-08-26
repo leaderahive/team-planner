@@ -747,17 +747,20 @@ export default function TeamPlanner() {
     return matchesCategory(e);
   }
 
-  // Stat cards toggle their status filter on/off, combining with whatever
-  // category filters (My tasks, a head, Meetings, Events) are already active
-  // — e.g. tap "Sabeeh" then "Completed" to see only Sabeeh's completed
-  // tasks. Turning ON a status filter switches to List view, since a
-  // filtered status reads better as a clean list than calendar dots;
-  // turning the last one off returns to Calendar view.
+  // Stat cards are exclusive AMONG THEMSELVES — tapping "Overdue" while
+  // "Completed" is active swaps to Overdue, it doesn't show both at once
+  // (Completed + Overdue together would be a contradiction anyway, since a
+  // completed task is never overdue). They DO combine with the separate
+  // category filters (My tasks, a head, Meetings, Events) — e.g. tap
+  // "Sabeeh" then "Completed" to see only Sabeeh's completed tasks.
+  // Turning ON a status filter switches to List view; turning it back off
+  // (tapping the same card again) returns to Calendar view.
   function toggleStatFilter(key) {
     setActiveFilters((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      const wasActive = next.has(key);
+      STATUS_KEYS.forEach((k) => next.delete(k)); // clear any other status selection first
+      if (!wasActive) next.add(key); // then turn this one on, unless it was the one just turned off
       const stillHasStatus = STATUS_KEYS.some((k) => next.has(k));
       setViewMode(stillHasStatus ? "list" : "calendar");
       return next;
