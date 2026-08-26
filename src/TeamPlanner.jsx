@@ -703,6 +703,12 @@ export default function TeamPlanner() {
     return headStyleFor(headId);
   }
 
+  // Declared here (not later, near the other stats) because matchesFilters
+  // below needs it immediately — a `const` used before its declaration line
+  // throws "Cannot access before initialization", which is exactly the bug
+  // that caused the blank-screen crash when tapping the Overdue stat card.
+  const todayKey = toKey(today);
+
   // An entry passes if it matches ANY active filter chip (OR logic) — e.g. selecting
   // "Sabeeh" and "Meetings" shows Sabeeh's tasks plus all meetings, not just their overlap.
   // With no filters active, everything shows (the normal, unfiltered view).
@@ -746,7 +752,6 @@ export default function TeamPlanner() {
 
   const selectedList = entriesByDate[selectedDate] || [];
   const selectedDateObj = new Date(selectedDate + "T00:00:00");
-  const todayKey = toKey(today);
 
   const tasks = entries.filter((e) => e.type === "task");
   const totalTasks = tasks.length;
