@@ -710,35 +710,58 @@ export default function TeamPlanner() {
   // that caused the blank-screen crash when tapping the Overdue stat card.
   const todayKey = toKey(today);
 
-  // An entry passes if it matches ANY active filter chip (OR logic) — e.g. selecting
-  // "Sabeeh" and "Meetings" shows Sabeeh's tasks plus all meetings, not just their overlap.
-  // With no filters active, everything shows (the normal, unfiltered view).
-  // Stat-card filters ("status-completed" etc.) are exclusive by convention —
-  // tapping one clears any other active filters first (see toggleStatFilter).
-  function matchesFilters(e) {
-    if (activeFilters.size === 0) return true;
-    if (activeFilters.has("status-completed")) return e.type === "task" && e.status === "completed";
-    if (activeFilters.has("status-in_progress")) return e.type === "task" && e.status === "in_progress";
+  // Two independent filter groups that combine with AND when both are active:
+  //   - "category" filters: My tasks / a specific head / Meetings / Events
+  //   - "status" filters: Completed / In progress / Overdue (from the stat cards)
+  // Within EACH group, multiple selections combine with OR (e.g. "Sabeeh" +
+  // "Meetings" shows either). Across the two groups it's AND (e.g. "Completed"
+  // + "Sabeeh" shows only Sabeeh's completed tasks — both must be true).
+  // With neither group active, everything shows (the normal, unfiltered view).
+  const STATUS_KEYS = ["status-completed", "status-in_progress", "status-overdue"];
+
+  function matchesStatus(e) {
+    if (e.type !== "task") return false;
+    if (activeFilters.has("status-completed") && e.status === "completed") return true;
+    if (activeFilters.has("status-in_progress") && e.status === "in_progress") return true;
     if (activeFilters.has("status-overdue")) {
-      if (e.type !== "task" || !e.dueDate) return false;
+      if (!e.dueDate) return false;
       if (e.status === "completed" || e.status === "cancelled") return false;
-      return e.dueDate < todayKey;
+      if (e.dueDate < todayKey) return true;
     }
+    return false;
+  }
+
+  function matchesCategory(e) {
     if (activeFilters.has("mine") && currentUser && e.type === "task" && e.assignee === currentUser.name) return true;
     if (activeFilters.has(e.type) && (e.type === "meeting" || e.type === "event")) return true;
     if (e.type === "task" && e.head && activeFilters.has(e.head)) return true;
     return false;
   }
 
-  // Stat cards act as exclusive shortcuts: tapping one clears whatever else
-  // was active, shows just that slice, AND switches to List view — a filtered
-  // stat like "Overdue" reads as a clean list, not scattered dots on a
-  // calendar grid. Tapping the same card again clears the filter and
-  // returns to Calendar view.
+  function matchesFilters(e) {
+    const hasStatusFilter = STATUS_KEYS.some((k) => activeFilters.has(k));
+    const hasCategoryFilter = ["mine", "meeting", "event", ...HEADS.map((h) => h.id)].some((k) => activeFilters.has(k));
+    if (!hasStatusFilter && !hasCategoryFilter) return true; // nothing active — show everything
+    if (hasStatusFilter && hasCategoryFilter) return matchesStatus(e) && matchesCategory(e); // AND across groups
+    if (hasStatusFilter) return matchesStatus(e);
+    return matchesCategory(e);
+  }
+
+  // Stat cards toggle their status filter on/off, combining with whatever
+  // category filters (My tasks, a head, Meetings, Events) are already active
+  // — e.g. tap "Sabeeh" then "Completed" to see only Sabeeh's completed
+  // tasks. Turning ON a status filter switches to List view, since a
+  // filtered status reads better as a clean list than calendar dots;
+  // turning the last one off returns to Calendar view.
   function toggleStatFilter(key) {
-    const clearing = activeFilters.has(key) && activeFilters.size === 1;
-    setActiveFilters(clearing ? new Set() : new Set([key]));
-    setViewMode(clearing ? "calendar" : "list");
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      const stillHasStatus = STATUS_KEYS.some((k) => next.has(k));
+      setViewMode(stillHasStatus ? "list" : "calendar");
+      return next;
+    });
   }
 
   const filteredEntries = entries.filter(matchesFilters);
@@ -1090,9 +1113,22 @@ export default function TeamPlanner() {
         <SummaryStat label="In progress" value={inProgressTasks} color="#B06000" onClick={() => toggleStatFilter("status-in_progress")} active={activeFilters.has("status-in_progress")} />
         <SummaryStat label="Overdue" value={overdueTasks} color="#C5221F" onClick={() => toggleStatFilter("status-overdue")} active={activeFilters.has("status-overdue")} />
       </div>
-      {activeFilters.has("status-completed") || activeFilters.has("status-in_progress") || activeFilters.has("status-overdue") ? (
+      {activeFilters.size > 0 ? (
         <div style={{ padding: "0 16px 10px", fontSize: 11.5, color: "#5f6368" }}>
-          Showing {activeFilters.has("status-completed") ? "completed" : activeFilters.has("status-in_progress") ? "in-progress" : "overdue"} tasks only —{" "}
+          Showing {(() => {
+            const parts = [];
+            if (activeFilters.has("status-completed")) parts.push("completed");
+            if (activeFilters.has("status-in_progress")) parts.push("in-progress");
+            if (activeFilters.has("status-overdue")) parts.push("overdue");
+            const statusLabel = parts.length > 0 ? parts.join("/") + " tasks" : "tasks";
+            const catParts = [];
+            if (activeFilters.has("mine")) catParts.push("assigned to you");
+            HEADS.forEach((h) => { if (activeFilters.has(h.id)) catParts.push(`entered by ${h.name}`); });
+            if (activeFilters.has("meeting")) catParts.push("meetings");
+            if (activeFilters.has("event")) catParts.push("events");
+            const catLabel = catParts.length > 0 ? ` (${catParts.join(", ")})` : "";
+            return parts.length === 0 && catParts.length === 0 ? "filtered items" : statusLabel + catLabel;
+          })()} only —{" "}
           <button onClick={() => { setActiveFilters(new Set()); setViewMode("calendar"); }} style={{ border: "none", background: "transparent", color: "#1a73e8", fontWeight: 600, cursor: "pointer", padding: 0, fontSize: 11.5 }}>
             clear
           </button>
