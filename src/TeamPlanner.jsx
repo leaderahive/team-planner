@@ -1140,8 +1140,8 @@ export default function TeamPlanner() {
         )}
       </div>
 
-      <div style={{ padding: "0 16px 10px" }}>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: showFilterPanel ? 8 : 10 }}>
+      <div style={{ padding: "0 16px 10px", position: "relative" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
           <button
             onClick={() => setShowFilterPanel((v) => !v)}
             style={{
@@ -1165,17 +1165,27 @@ export default function TeamPlanner() {
         </div>
 
         {showFilterPanel && (
-          <div style={{
-            display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10,
-            background: "#f8f9fa", borderRadius: 10, padding: 10,
-          }}>
-            <FilterChip label="My tasks" active={activeFilters.has("mine")} color="#1a73e8" bg="#E8F0FE" onClick={() => toggleFilter("mine")} />
-            {HEADS.map((h) => (
-              <FilterChip key={h.id} label={h.name} active={activeFilters.has(h.id)} color={h.color} bg={h.bg} onClick={() => toggleFilter(h.id)} />
-            ))}
-            <FilterChip label="Meetings" active={activeFilters.has("meeting")} color={MEETING_COLOR} bg={MEETING_BG} onClick={() => toggleFilter("meeting")} />
-            <FilterChip label="Events" active={activeFilters.has("event")} color={EVENT_COLOR} bg={EVENT_BG} onClick={() => toggleFilter("event")} />
-          </div>
+          <>
+            {/* Invisible full-screen backdrop — tapping anywhere outside the
+                panel closes it, same as Amazon's sort menu behavior. */}
+            <div
+              onClick={() => setShowFilterPanel(false)}
+              style={{ position: "fixed", inset: 0, zIndex: 19 }}
+            />
+            <div style={{
+              position: "absolute", top: "100%", left: 16, marginTop: 4,
+              display: "flex", flexWrap: "wrap", gap: 6, width: "calc(100% - 32px)",
+              background: "#fff", border: "1px solid #dadce0", borderRadius: 10, padding: 10,
+              boxShadow: "0 2px 10px rgba(0,0,0,0.12)", zIndex: 20,
+            }}>
+              <FilterChip label="My tasks" active={activeFilters.has("mine")} color="#1a73e8" bg="#E8F0FE" onClick={() => { toggleFilter("mine"); setShowFilterPanel(false); }} />
+              {HEADS.map((h) => (
+                <FilterChip key={h.id} label={h.name} active={activeFilters.has(h.id)} color={h.color} bg={h.bg} onClick={() => { toggleFilter(h.id); setShowFilterPanel(false); }} />
+              ))}
+              <FilterChip label="Meetings" active={activeFilters.has("meeting")} color={MEETING_COLOR} bg={MEETING_BG} onClick={() => { toggleFilter("meeting"); setShowFilterPanel(false); }} />
+              <FilterChip label="Events" active={activeFilters.has("event")} color={EVENT_COLOR} bg={EVENT_BG} onClick={() => { toggleFilter("event"); setShowFilterPanel(false); }} />
+            </div>
+          </>
         )}
 
         <div style={{ display: "flex", gap: 6 }}>
