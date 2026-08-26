@@ -729,11 +729,9 @@ export default function TeamPlanner() {
   // calendar grid. Tapping the same card again clears the filter and
   // returns to Calendar view.
   function toggleStatFilter(key) {
-    setActiveFilters((prev) => {
-      const clearing = prev.has(key) && prev.size === 1;
-      setViewMode(clearing ? "calendar" : "list");
-      return clearing ? new Set() : new Set([key]);
-    });
+    const clearing = activeFilters.has(key) && activeFilters.size === 1;
+    setActiveFilters(clearing ? new Set() : new Set([key]));
+    setViewMode(clearing ? "calendar" : "list");
   }
 
   const filteredEntries = entries.filter(matchesFilters);
@@ -1341,6 +1339,7 @@ export default function TeamPlanner() {
           openEditForm={openEditForm}
           deleteEntry={deleteEntry}
           cycleStatus={cycleStatus}
+          isStatFiltered={activeFilters.has("status-completed") || activeFilters.has("status-in_progress") || activeFilters.has("status-overdue")}
         />
       )}
 
@@ -3005,7 +3004,7 @@ function AcademicsScreen({ currentUser, isOwner, isHead, showToast }) {
   );
 }
 
-function ListView({ entries, todayKey, currentUser, isMember, headInfo, canEditEntry, openEditForm, deleteEntry, cycleStatus }) {
+function ListView({ entries, todayKey, currentUser, isMember, headInfo, canEditEntry, openEditForm, deleteEntry, cycleStatus, isStatFiltered }) {
   const withDate = entries.filter((e) => e.dueDate);
   const overdue = withDate
     .filter((e) => e.type === "task" && e.dueDate < todayKey && e.status !== "completed" && e.status !== "cancelled")
@@ -3013,6 +3012,11 @@ function ListView({ entries, todayKey, currentUser, isMember, headInfo, canEditE
   const upcoming = withDate
     .filter((e) => e.dueDate >= todayKey)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  // When a stat card filter (Completed/In progress/Overdue) is active, every
+  // entry already matches that one criterion — showing a separate "Overdue"
+  // vs "Upcoming" split on top of that is confusing and can produce an
+  // empty/contradictory section. Just render one flat list in that case.
+  const allSorted = withDate.slice().sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
   function Row(e) {
     const isTask = e.type === "task";
@@ -3069,17 +3073,27 @@ function ListView({ entries, todayKey, currentUser, isMember, headInfo, canEditE
 
   return (
     <div style={{ padding: "4px 16px 12px" }}>
-      {overdue.length > 0 && (
-        <>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#C5221F", margin: "4px 0 8px" }}>Overdue</div>
-          {overdue.map(Row)}
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#202124", margin: "14px 0 8px" }}>Upcoming</div>
-        </>
-      )}
-      {upcoming.length === 0 ? (
-        <div style={{ fontSize: 13, color: "#70757a", padding: "8px 0" }}>Nothing upcoming.</div>
+      {isStatFiltered ? (
+        allSorted.length === 0 ? (
+          <div style={{ fontSize: 13, color: "#70757a", padding: "8px 0" }}>Nothing here.</div>
+        ) : (
+          allSorted.map(Row)
+        )
       ) : (
-        upcoming.map(Row)
+        <>
+          {overdue.length > 0 && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#C5221F", margin: "4px 0 8px" }}>Overdue</div>
+              {overdue.map(Row)}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#202124", margin: "14px 0 8px" }}>Upcoming</div>
+            </>
+          )}
+          {upcoming.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#70757a", padding: "8px 0" }}>Nothing upcoming.</div>
+          ) : (
+            upcoming.map(Row)
+          )}
+        </>
       )}
     </div>
   );
