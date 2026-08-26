@@ -1099,7 +1099,7 @@ export default function TeamPlanner() {
         </div>
       ) : null}
 
-      <div style={{ padding: "0 16px 14px" }}>
+      <div style={{ padding: "0 16px 14px", position: "relative" }}>
         <button
           onClick={() => setShowLeaderboard((v) => !v)}
           style={{
@@ -1112,36 +1112,49 @@ export default function TeamPlanner() {
           <span style={{ color: "#5f6368", fontSize: 12 }}>{showLeaderboard ? "Hide ▲" : "Show ▼"}</span>
         </button>
         {showLeaderboard && (
-          <div style={{ marginTop: 8, border: "1px solid #dadce0", borderRadius: 10, overflow: "hidden" }}>
-            {leaderboard.length === 0 ? (
-              <div style={{ padding: "12px 14px", fontSize: 12.5, color: "#70757a" }}>
-                No tasks due this month yet.
-              </div>
-            ) : (
-              leaderboard.map((row, idx) => (
-                <div
-                  key={row.name}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 10, padding: "9px 14px",
-                    borderTop: idx === 0 ? "none" : "1px solid #f1f3f4",
-                    background: idx === 0 ? "#FFFBEA" : "#fff",
-                  }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 700, color: idx === 0 ? "#B06000" : "#70757a", width: 20 }}>
-                    {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `${idx + 1}.`}
-                  </span>
-                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: "#202124" }}>{row.name}</span>
-                  <span style={{ fontSize: 11.5, color: "#70757a" }}>{row.done}/{row.total}</span>
-                  <span style={{
-                    fontSize: 12, fontWeight: 700, minWidth: 40, textAlign: "right",
-                    color: row.rate >= 70 ? "#188038" : row.rate >= 40 ? "#B06000" : "#C5221F",
-                  }}>
-                    {row.rate}%
-                  </span>
+          <>
+            {/* Invisible full-screen backdrop — tapping anywhere outside the
+                panel closes it, same as the Filter dropdown. */}
+            <div
+              onClick={() => setShowLeaderboard(false)}
+              style={{ position: "fixed", inset: 0, zIndex: 19 }}
+            />
+            <div style={{
+              position: "absolute", top: "100%", left: 16, marginTop: 4,
+              width: "calc(100% - 32px)", maxHeight: 320, overflowY: "auto",
+              border: "1px solid #dadce0", borderRadius: 10, overflow: "hidden",
+              background: "#fff", boxShadow: "0 2px 10px rgba(0,0,0,0.12)", zIndex: 20,
+            }}>
+              {leaderboard.length === 0 ? (
+                <div style={{ padding: "12px 14px", fontSize: 12.5, color: "#70757a" }}>
+                  No tasks due this month yet.
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                leaderboard.map((row, idx) => (
+                  <div
+                    key={row.name}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, padding: "9px 14px",
+                      borderTop: idx === 0 ? "none" : "1px solid #f1f3f4",
+                      background: idx === 0 ? "#FFFBEA" : "#fff",
+                    }}
+                  >
+                    <span style={{ fontSize: 13, fontWeight: 700, color: idx === 0 ? "#B06000" : "#70757a", width: 20 }}>
+                      {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `${idx + 1}.`}
+                    </span>
+                    <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: "#202124" }}>{row.name}</span>
+                    <span style={{ fontSize: 11.5, color: "#70757a" }}>{row.done}/{row.total}</span>
+                    <span style={{
+                      fontSize: 12, fontWeight: 700, minWidth: 40, textAlign: "right",
+                      color: row.rate >= 70 ? "#188038" : row.rate >= 40 ? "#B06000" : "#C5221F",
+                    }}>
+                      {row.rate}%
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
         )}
       </div>
 
